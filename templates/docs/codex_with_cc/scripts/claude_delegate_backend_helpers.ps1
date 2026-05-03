@@ -292,14 +292,9 @@ function New-ClaudeDelegateCliArgs {
   return $claudeArgs
 }
 
-function Get-ClaudeDelegateRetryDecision {
+function Get-ClaudeDelegateNonJsonRawLines {
   param(
-    [Parameter(Mandatory = $true)][string[]]$RawLines,
-    [Parameter(Mandatory = $true)][bool]$ResumeAttempt,
-    [Parameter(Mandatory = $true)][int]$ExitCode,
-    [Parameter(Mandatory = $true)][bool]$SawAssistantText,
-    [Parameter(Mandatory = $true)][bool]$SawResultSuccess,
-    [Parameter(Mandatory = $true)][bool]$CapturedFinalResultHeading
+    [Parameter(Mandatory = $true)][string[]]$RawLines
   )
 
   $nonJsonRawLines = New-Object System.Collections.Generic.List[string]
@@ -310,11 +305,24 @@ function Get-ClaudeDelegateRetryDecision {
     try {
       $null = ([string]$rawLine | ConvertFrom-Json -Depth 30)
     } catch {
-      $nonJsonRawLines.Add([string]$rawLine)
+      $nonJsonRawLines.Add(([string]$rawLine).Trim())
     }
   }
 
-  $joined = ($nonJsonRawLines.ToArray() -join [Environment]::NewLine)
+  return @($nonJsonRawLines.ToArray())
+}
+
+function Get-ClaudeDelegateRetryDecision {
+  param(
+    [Parameter(Mandatory = $true)][string[]]$RawLines,
+    [Parameter(Mandatory = $true)][bool]$ResumeAttempt,
+    [Parameter(Mandatory = $true)][int]$ExitCode,
+    [Parameter(Mandatory = $true)][bool]$SawAssistantText,
+    [Parameter(Mandatory = $true)][bool]$SawResultSuccess,
+    [Parameter(Mandatory = $true)][bool]$CapturedFinalResultHeading
+  )
+
+  $joined = ((Get-ClaudeDelegateNonJsonRawLines -RawLines $RawLines) -join [Environment]::NewLine)
   $sawStaleSessionText = ($joined -match 'No conversation found.*session ID')
   $sawStreamJsonVerboseError = ($joined -match 'stream-json.*requires.*--verbose')
   $hasStructuredSuccess = ($SawResultSuccess -and $CapturedFinalResultHeading)
@@ -347,6 +355,27 @@ function Get-ClaudeDelegateRetryDecision {
   }
 
   return [pscustomobject]$decision
+}
+
+function Get-ClaudeDelegateFailureSummary {
+  param(
+    [Parameter(Mandatory = $true)][string[]]$RawLines,
+    [AllowNull()][string]$RetryReason,
+    [Parameter(Mandatory = $true)][int]$AttemptCount,
+    [Parameter(Mandatory = $true)][int]$MaxRetryCount,
+    [Parameter(Mandatory = $true)][int]$ExitCode
+  )
+
+  $errorLines = @(Get-ClaudeDelegateNonJsonRawLines -RawLines $RawLines | Select-Object -Unique | Select-Object -First 2)
+  $errorSnippet = if ($errorLines.Count -gt 0) {
+    $errorLines -join ' | '
+  } else {
+    'No non-JSON stderr summary was captured.'
+  }
+  $reasonText = if ([string]::IsNullOrWhiteSpace($RetryReason)) { 'unknown_retry_condition' } else { $RetryReason }
+  $maxAttempts = $MaxRetryCount + 1
+
+  return "NEED_HUMAN_INTERVENTION after exhausting retry budget. retryReason=$reasonText. attempt $AttemptCount/$maxAttempts. exitCode=$ExitCode. $errorSnippet"
 }
 
 function Test-ClaudeDelegateNeedsFreshSessionRetry {

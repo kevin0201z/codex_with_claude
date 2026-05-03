@@ -81,6 +81,7 @@ try {
   Assert-True -Condition ($null -ne (Get-Command New-ClaudeDelegateCliArgs -ErrorAction SilentlyContinue)) -Name 'backend-helper-exports-cli-args'
   Assert-True -Condition ($null -ne (Get-Command Test-ClaudeDelegateNeedsFreshSessionRetry -ErrorAction SilentlyContinue)) -Name 'backend-helper-exports-fresh-session-retry-check'
   Assert-True -Condition ($null -ne (Get-Command Get-ClaudeDelegateRetryDecision -ErrorAction SilentlyContinue)) -Name 'backend-helper-exports-retry-decision'
+  Assert-True -Condition ($null -ne (Get-Command Get-ClaudeDelegateFailureSummary -ErrorAction SilentlyContinue)) -Name 'backend-helper-exports-failure-summary'
   Assert-True -Condition ($null -ne (Get-Command Get-ClaudeDelegateOutputResolution -ErrorAction SilentlyContinue)) -Name 'backend-helper-exports-output-resolution'
   Assert-True -Condition ($null -ne (Get-Command Reset-ClaudeSessionLeaseForFreshSession -ErrorAction SilentlyContinue)) -Name 'session-pool-exports-fresh-reset'
 
@@ -94,6 +95,23 @@ try {
   Assert-True -Condition ($missingChildThreadMarker.ExitCode -ne 0) -Name 'missing-child-thread-marker-fails'
   Assert-True -Condition (($missingChildThreadMarker.Output -join [Environment]::NewLine).Contains('CODEX_CLAUDE_CHILD_THREAD=1')) -Name 'missing-child-thread-marker-names-required-marker'
   Assert-True -Condition (($missingChildThreadMarker.Output -join [Environment]::NewLine).Contains('may only run inside a Codex spawn_agent child thread')) -Name 'missing-child-thread-marker-error-is-clear'
+
+  $dryRunArtifactRoot = Join-Path $tempRoot 'dry-run-max-retry'
+  $dryRunResult = Invoke-DelegateWorkerScript -ArgumentList @(
+    '-Task', 'dry run max retry probe',
+    '-ArtifactRoot', $dryRunArtifactRoot,
+    '-SessionKey', 'dry-run-max-retry',
+    '-SessionMode', 'PrimaryReuse',
+    '-MaxRetryCount', '7',
+    '-DryRun'
+  ) -SetChildThreadMarker
+  if ($dryRunResult.ExitCode -ne 0) {
+    throw "delegate dry run with explicit max retry count failed unexpectedly.`n$($dryRunResult.Output -join [Environment]::NewLine)"
+  }
+  $dryRunConfig = Get-Content -LiteralPath ((Get-ChildItem -LiteralPath $dryRunArtifactRoot -Filter 'config_*.json' | Select-Object -First 1).FullName) -Raw | ConvertFrom-Json
+  $dryRunStatus = Get-Content -LiteralPath ((Get-ChildItem -LiteralPath $dryRunArtifactRoot -Filter 'status_*.json' | Select-Object -First 1).FullName) -Raw | ConvertFrom-Json
+  Assert-Equal -Actual ([int]$dryRunConfig.maxRetryCount) -Expected 7 -Name 'dry-run-config-records-max-retry-count'
+  Assert-Equal -Actual ([int]$dryRunStatus.maxRetryCount) -Expected 7 -Name 'dry-run-status-records-max-retry-count'
 
   $cliArgs = @(New-ClaudeDelegateCliArgs `
     -Model 'sonnet' `
@@ -174,6 +192,21 @@ try {
   Assert-True -Condition (-not $toolResultFalsePositiveDecision.shouldRetry) -Name 'tool-result-content-does-not-trigger-retry'
   Assert-True -Condition (-not $toolResultFalsePositiveDecision.sawStaleSessionText) -Name 'tool-result-content-does-not-trigger-stale-flag'
   Assert-True -Condition (-not $toolResultFalsePositiveDecision.sawStreamJsonVerboseError) -Name 'tool-result-content-does-not-trigger-stream-json-flag'
+
+  $failureSummary = Get-ClaudeDelegateFailureSummary `
+    -RawLines @(
+      'Error: stream-json output requires the --verbose flag when printing',
+      'Error: transient startup fault',
+      'Noise that should be ignored once limit is reached'
+    ) `
+    -RetryReason 'stream_json_startup' `
+    -AttemptCount 6 `
+    -MaxRetryCount 5 `
+    -ExitCode 1
+  Assert-True -Condition ($failureSummary.Contains('NEED_HUMAN_INTERVENTION')) -Name 'failure-summary-names-human-intervention'
+  Assert-True -Condition ($failureSummary.Contains('stream_json_startup')) -Name 'failure-summary-includes-retry-reason'
+  Assert-True -Condition ($failureSummary.Contains('attempt 6/6')) -Name 'failure-summary-includes-attempt-ceiling'
+  Assert-True -Condition ($failureSummary.Contains('stream-json output requires the --verbose flag when printing')) -Name 'failure-summary-includes-error-snippet'
 
   $captureState = @{
     assistantTexts = New-Object System.Collections.Generic.List[string]
@@ -366,6 +399,150 @@ None
   $legacyVerifyOutputText = & pwsh -NoProfile -File $verifyScriptPath -RunId $legacyRunId -ArtifactRoot $artifactRoot 2>&1
   Assert-True -Condition ($LASTEXITCODE -ne 0) -Name 'legacy-verify-script-fails'
   Assert-True -Condition (($legacyVerifyOutputText -join [Environment]::NewLine).Contains('Legacy delegate artifact is unsupported')) -Name 'legacy-verify-script-has-clear-error'
+
+  $failedRunId = 'artifact-verify-failed'
+  $failedStatusPath = Join-Path $artifactRoot "status_${failedRunId}.json"
+  $failedOutputPath = Join-Path $artifactRoot "claude_${failedRunId}.md"
+  $failedConfigPath = Join-Path $artifactRoot "config_${failedRunId}.json"
+  $failedPromptPath = Join-Path $artifactRoot "prompt_${failedRunId}.md"
+  $failedStreamPath = Join-Path $artifactRoot "stream_${failedRunId}.jsonl"
+  $failedTracePath = Join-Path $artifactRoot "trace_${failedRunId}.log"
+  $failedSummary = 'NEED_HUMAN_INTERVENTION after exhausting retry budget. retryReason=stream_json_startup. attempt 6/6. Error: stream-json output requires the --verbose flag when printing'
+  $failedOutput = @"
+Process Log
+- Retry ceiling reached during delegate startup recovery.
+
+Summary
+Automatic retry budget exhausted.
+
+Changed Files
+None
+
+Verification
+- not run; worker never reached repository mutation stage
+
+Final Result
+FAIL / NEED_HUMAN_INTERVENTION
+$failedSummary
+
+Risks Or Follow-ups
+- A human or Codex orchestration layer must inspect the delegate startup failure before retrying again.
+"@
+  [System.IO.File]::WriteAllText($failedOutputPath, $failedOutput, (New-Object System.Text.UTF8Encoding($false)))
+  [System.IO.File]::WriteAllText($failedPromptPath, '# prompt', (New-Object System.Text.UTF8Encoding($false)))
+  [System.IO.File]::WriteAllText($failedStreamPath, '{"type":"result","subtype":"error"}', (New-Object System.Text.UTF8Encoding($false)))
+  [System.IO.File]::WriteAllText($failedTracePath, '[00:00:00] retry budget exhausted', (New-Object System.Text.UTF8Encoding($false)))
+  Write-ClaudeDelegateJsonFile -Path $failedStatusPath -Data @{
+    artifactSchema = 2
+    invocationContract = 'spawn_agent_child_only'
+    childThreadMarkerName = 'CODEX_CLAUDE_CHILD_THREAD'
+    childThreadMarkerValidated = $true
+    runId = $failedRunId
+    status = 'failed'
+    outputPath = $failedOutputPath
+    promptPath = $failedPromptPath
+    rawStreamPath = $failedStreamPath
+    tracePath = $failedTracePath
+    exitCode = 1
+    attemptCount = 6
+    retryCount = 5
+    maxRetryCount = 5
+    failureDisposition = 'NEED_HUMAN_INTERVENTION'
+    failureSummary = $failedSummary
+    lastRetryReason = 'stream_json_startup'
+    attempts = @(
+      @{
+        attempt = 1
+        sessionId = 'failed-session-1'
+        resume = $false
+        retryReason = 'stream_json_startup'
+        exitCode = 1
+        sawAssistantText = $false
+        sawResultSuccess = $false
+        capturedFinalResult = $false
+      },
+      @{
+        attempt = 2
+        sessionId = 'failed-session-1'
+        resume = $false
+        retryReason = 'stream_json_startup'
+        exitCode = 1
+        sawAssistantText = $false
+        sawResultSuccess = $false
+        capturedFinalResult = $false
+      },
+      @{
+        attempt = 3
+        sessionId = 'failed-session-1'
+        resume = $false
+        retryReason = 'stream_json_startup'
+        exitCode = 1
+        sawAssistantText = $false
+        sawResultSuccess = $false
+        capturedFinalResult = $false
+      },
+      @{
+        attempt = 4
+        sessionId = 'failed-session-1'
+        resume = $false
+        retryReason = 'stream_json_startup'
+        exitCode = 1
+        sawAssistantText = $false
+        sawResultSuccess = $false
+        capturedFinalResult = $false
+      },
+      @{
+        attempt = 5
+        sessionId = 'failed-session-1'
+        resume = $false
+        retryReason = 'stream_json_startup'
+        exitCode = 1
+        sawAssistantText = $false
+        sawResultSuccess = $false
+        capturedFinalResult = $false
+      },
+      @{
+        attempt = 6
+        sessionId = 'failed-session-1'
+        resume = $false
+        retryReason = $null
+        exitCode = 1
+        sawAssistantText = $false
+        sawResultSuccess = $false
+        capturedFinalResult = $true
+      }
+    )
+  }
+  Write-ClaudeDelegateJsonFile -Path $failedConfigPath -Data @{
+    artifactSchema = 2
+    invocationContract = 'spawn_agent_child_only'
+    childThreadMarkerName = 'CODEX_CLAUDE_CHILD_THREAD'
+    childThreadMarkerValidated = $true
+    runId = $failedRunId
+    outputPath = $failedOutputPath
+    statusPath = $failedStatusPath
+    promptPath = $failedPromptPath
+    sessionKey = 'artifact-verify-failed-session'
+    sessionStatePath = $sessionStatePath
+    sessionMode = 'PrimaryReuse'
+    rawStreamPath = $failedStreamPath
+    tracePath = $failedTracePath
+    initialSessionId = 'failed-session-1'
+    initialResume = $false
+    sessionId = 'failed-session-1'
+    resume = $false
+    attemptCount = 6
+    retryCount = 5
+    maxRetryCount = 5
+    failureDisposition = 'NEED_HUMAN_INTERVENTION'
+    failureSummary = $failedSummary
+  }
+
+  $failedVerifyOutputText = & pwsh -NoProfile -File $verifyScriptPath -RunId $failedRunId -ArtifactRoot $artifactRoot 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    throw "verify_delegate_artifacts should accept structured failed artifact.`n$($failedVerifyOutputText -join [Environment]::NewLine)"
+  }
+  Assert-True -Condition (($failedVerifyOutputText -join [Environment]::NewLine).Contains('Artifact verification passed')) -Name 'failed-artifact-verification-passes'
 
   $validationRoot = Join-Path $tempRoot 'real-chain-validation'
   $validationOutputText = & pwsh -NoProfile -File $realChainValidationScriptPath `

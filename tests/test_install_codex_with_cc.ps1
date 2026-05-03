@@ -76,10 +76,12 @@ Keep this project-specific rule.
   Assert-Contains -Text $agentsText -Needle 'Keep this project-specific rule.' -Name 'existing-agents-content-preserved'
   Assert-Contains -Text $agentsText -Needle '<!-- BEGIN CODEX_WITH_CC -->' -Name 'agents-managed-block-added'
   Assert-Contains -Text $agentsText -Needle 'docs/codex_with_cc/CODEX_WITH_CC.md' -Name 'agents-managed-block-points-to-central-entry'
+  Assert-Contains -Text $agentsText -Needle '`docs/codex_with_cc/CODEX_WITH_CC.md`' -Name 'agents-managed-block-keeps-markdown-code-format'
 
   foreach ($entryFileName in @('CLAUDE.md', 'GEMINI.md')) {
     $entryText = Get-Content -LiteralPath (Join-Path $targetRoot $entryFileName) -Raw
     Assert-Contains -Text $entryText -Needle 'docs/codex_with_cc/CODEX_WITH_CC.md' -Name "$entryFileName-points-to-central-entry"
+    Assert-Contains -Text $entryText -Needle '`docs/codex_with_cc/CODEX_WITH_CC.md`' -Name "$entryFileName-keeps-markdown-code-format"
   }
 
   $delegateText = Get-Content -LiteralPath (Join-Path $workflowRoot 'scripts\delegate_to_claude.ps1') -Raw

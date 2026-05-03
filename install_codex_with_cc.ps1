@@ -30,11 +30,11 @@ function Update-AgentEntrypoint {
 
   $begin = '<!-- BEGIN CODEX_WITH_CC -->'
   $end = '<!-- END CODEX_WITH_CC -->'
-  $block = @"
-$begin
-Codex with Claude Code workflow: before using this workflow, read `docs/codex_with_cc/CODEX_WITH_CC.md`.
-$end
-"@
+  $block = @(
+    $begin
+    'Codex with Claude Code workflow: before using this workflow, read `docs/codex_with_cc/CODEX_WITH_CC.md`.'
+    $end
+  ) -join [Environment]::NewLine
 
   if (Test-Path -LiteralPath $Path) {
     $text = Get-Content -LiteralPath $Path -Raw

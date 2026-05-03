@@ -27,6 +27,8 @@ param(
   [switch]$ResetParallelPool,
   [int]$LockTimeoutSeconds = 120,
   [int]$LockPollMilliseconds = 500,
+  [ValidateRange(0, 100)]
+  [int]$MaxRetryCount = 5,
   [switch]$BypassPermissions,
   [switch]$DryRun
 )
@@ -243,6 +245,7 @@ $configData = [ordered]@{
   initialResume = $null
   attemptCount = 0
   retryCount = 0
+  maxRetryCount = $MaxRetryCount
 }
 Write-ClaudeDelegateJsonFile -Path $configPath -Data $configData
 
@@ -263,6 +266,7 @@ $statusData = [ordered]@{
   exitCode = $null
   attemptCount = 0
   retryCount = 0
+  maxRetryCount = $MaxRetryCount
   attempts = @()
 }
 Write-ClaudeDelegateJsonFile -Path $statusPath -Data $statusData
@@ -378,12 +382,14 @@ try {
 
   $promptText = Get-Content -LiteralPath $promptPath -Raw
   $attempt = 0
-  $maxAttempts = 2
+  $maxAttempts = $MaxRetryCount + 1
   $retryCount = 0
   $delegateSucceeded = $false
   $exitCode = -1
   $finalText = ''
   $outputResolution = $null
+  $failureDisposition = ''
+  $failureSummary = ''
 
   while ($attempt -lt $maxAttempts) {
     $attempt++
@@ -517,6 +523,50 @@ try {
       continue
     }
 
+    if ([bool]$retryDecision.shouldRetry) {
+      $failureDisposition = 'NEED_HUMAN_INTERVENTION'
+      $failureSummary = Get-ClaudeDelegateFailureSummary `
+        -RawLines @($attemptRawLines.ToArray()) `
+        -RetryReason ([string]$retryDecision.retryReason) `
+        -AttemptCount $attempt `
+        -MaxRetryCount $MaxRetryCount `
+        -ExitCode $exitCode
+      $statusData.failureDisposition = $failureDisposition
+      $statusData.failureSummary = $failureSummary
+      $statusData.finalRetryReason = [string]$retryDecision.retryReason
+      $configData.failureDisposition = $failureDisposition
+      $configData.failureSummary = $failureSummary
+      $configData.finalRetryReason = [string]$retryDecision.retryReason
+      Write-ClaudeDelegateJsonFile -Path $configPath -Data $configData
+      Write-ClaudeDelegateJsonFile -Path $statusPath -Data $statusData
+
+      $traceWriter.WriteLine("[failure] retry ceiling reached; forcing NEED_HUMAN_INTERVENTION")
+      $traceWriter.WriteLine("[failure] $failureSummary")
+      $traceWriter.Flush()
+
+      $finalText = @"
+Process Log
+- Delegate worker detected a retryable Claude failure and exhausted the configured retry budget.
+- Automatic recovery stopped to avoid unbounded compute burn.
+
+Summary
+Automatic retry recovery hit the configured ceiling and requires human or Codex intervention.
+
+Changed Files
+None
+
+Verification
+- not run; the worker never reached a trustworthy execution state
+
+Final Result
+FAIL / NEED_HUMAN_INTERVENTION
+$failureSummary
+
+Risks Or Follow-ups
+- Inspect Claude CLI startup/session health before retrying this delegated task again.
+"@
+    }
+
     $outputResolution = Get-ClaudeDelegateOutputResolution `
       -FinalText $finalText `
       -OutputPath $resolvedOutputPath `
@@ -560,12 +610,25 @@ try {
   } else {
     $statusData.status = 'failed'
   }
+  if (-not [string]::IsNullOrWhiteSpace($failureDisposition)) {
+    $statusData.failureDisposition = $failureDisposition
+    $statusData.failureSummary = $failureSummary
+    $configData.failureDisposition = $failureDisposition
+    $configData.failureSummary = $failureSummary
+    Write-ClaudeDelegateJsonFile -Path $configPath -Data $configData
+  }
   Write-ClaudeDelegateJsonFile -Path $statusPath -Data $statusData
 
   if ($exitCode -ne 0) {
+    if ([string]$failureDisposition -eq 'NEED_HUMAN_INTERVENTION') {
+      throw "Claude delegate retry ceiling reached: $failureSummary"
+    }
     throw "Claude Code exited with code $exitCode"
   }
   if ($statusData.status -ne 'completed') {
+    if ([string]$failureDisposition -eq 'NEED_HUMAN_INTERVENTION') {
+      throw "Claude delegate retry ceiling reached: $failureSummary"
+    }
     throw "Claude Code finished without a valid structured Final Result report. Output: $resolvedOutputPath"
   }
 } finally {

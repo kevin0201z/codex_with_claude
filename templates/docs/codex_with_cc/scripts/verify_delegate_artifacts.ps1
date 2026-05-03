@@ -78,14 +78,19 @@ if ([string]$status.outputPath -ne $outputPath) {
 if ([string]$status.status -notin @('starting', 'running', 'completed', 'failed')) {
   throw "Unexpected delegate status value: $([string]$status.status)"
 }
-if ([string]$status.status -ne 'completed') {
-  throw "Delegate status is not completed: $([string]$status.status)"
+$isCompleted = ([string]$status.status -eq 'completed')
+$isStructuredFailure = ([string]$status.status -eq 'failed')
+if (-not $isCompleted -and -not $isStructuredFailure) {
+  throw "Delegate status is neither completed nor failed: $([string]$status.status)"
 }
 if (-not (Test-ClaudeDelegateHasFinalResult -Path $outputPath)) {
   throw "Delegate output does not contain a Final Result heading: $outputPath"
 }
-if ($status.PSObject.Properties.Name -contains 'exitCode' -and [int]$status.exitCode -ne 0) {
+if ($isCompleted -and $status.PSObject.Properties.Name -contains 'exitCode' -and [int]$status.exitCode -ne 0) {
   throw "Delegate exitCode is not zero: $([int]$status.exitCode)"
+}
+if ($isStructuredFailure -and $status.PSObject.Properties.Name -contains 'exitCode' -and [int]$status.exitCode -eq 0) {
+  throw 'Structured failed delegate must record a non-zero exitCode.'
 }
 if (-not ($status.PSObject.Properties.Name -contains 'attempts')) {
   throw 'Delegate status is missing attempts[] audit data.'
@@ -114,6 +119,31 @@ if ($configAttemptCount -ne $statusAttemptCount) {
 }
 if ($configRetryCount -ne $statusRetryCount) {
   throw "Config/status retryCount mismatch. config=$configRetryCount status=$statusRetryCount"
+}
+if ($isStructuredFailure) {
+  foreach ($propertyName in @('failureDisposition', 'failureSummary', 'maxRetryCount')) {
+    if (-not ($status.PSObject.Properties.Name -contains $propertyName)) {
+      throw "Structured failed delegate status is missing '$propertyName'."
+    }
+    if (-not ($config.PSObject.Properties.Name -contains $propertyName)) {
+      throw "Structured failed delegate config is missing '$propertyName'."
+    }
+  }
+  if ([string]$status.failureDisposition -ne 'NEED_HUMAN_INTERVENTION') {
+    throw "Structured failed delegate must set failureDisposition to 'NEED_HUMAN_INTERVENTION'. Actual: $([string]$status.failureDisposition)"
+  }
+  if ([string]$config.failureDisposition -ne [string]$status.failureDisposition) {
+    throw 'Structured failed delegate failureDisposition must match between config and status.'
+  }
+  if ([string]::IsNullOrWhiteSpace([string]$status.failureSummary)) {
+    throw 'Structured failed delegate must record a non-empty failureSummary.'
+  }
+  if ([string]$config.failureSummary -ne [string]$status.failureSummary) {
+    throw 'Structured failed delegate failureSummary must match between config and status.'
+  }
+  if ([int]$config.maxRetryCount -ne [int]$status.maxRetryCount) {
+    throw 'Structured failed delegate maxRetryCount must match between config and status.'
+  }
 }
 
 $recordedRetryReasons = 0
@@ -159,13 +189,16 @@ if ($config.PSObject.Properties.Name -contains 'resume' -and [bool]$config.resum
 if ([int]$finalAttempt.exitCode -ne [int]$status.exitCode) {
   throw "Final attempt exitCode mismatch. Expected $([int]$status.exitCode) but found $([int]$finalAttempt.exitCode)"
 }
-if ([string]$status.status -eq 'completed') {
+if ($isCompleted) {
   if (-not [bool]$finalAttempt.sawResultSuccess) {
     throw 'Completed delegate must record sawResultSuccess=true on the final attempt.'
   }
   if (-not [bool]$finalAttempt.capturedFinalResult) {
     throw 'Completed delegate must record capturedFinalResult=true on the final attempt.'
   }
+}
+if ($isStructuredFailure -and -not [bool]$finalAttempt.capturedFinalResult) {
+  throw 'Structured failed delegate must record capturedFinalResult=true on the final attempt.'
 }
 
 $optionalPaths = @()

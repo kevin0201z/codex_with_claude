@@ -1,0 +1,112 @@
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
+function Assert-True {
+  param(
+    [Parameter(Mandatory = $true)]
+    [bool]$Condition,
+    [Parameter(Mandatory = $true)]
+    [string]$Name
+  )
+
+  if (-not $Condition) {
+    throw "[$Name] assertion failed"
+  }
+}
+
+function Assert-Contains {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Text,
+    [Parameter(Mandatory = $true)]
+    [string]$Needle,
+    [Parameter(Mandatory = $true)]
+    [string]$Name
+  )
+
+  Assert-True -Condition ($Text.Contains($Needle)) -Name $Name
+}
+
+function Assert-NotContains {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Text,
+    [Parameter(Mandatory = $true)]
+    [string]$Needle,
+    [Parameter(Mandatory = $true)]
+    [string]$Name
+  )
+
+  Assert-True -Condition (-not $Text.Contains($Needle)) -Name $Name
+}
+
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$installerPath = Join-Path $repoRoot 'install_codex_with_cc.ps1'
+$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) "codex_with_cc_install_$([guid]::NewGuid().ToString('N'))"
+$targetRoot = Join-Path $tempRoot 'host-project'
+
+try {
+  New-Item -ItemType Directory -Path $targetRoot -Force | Out-Null
+  Set-Content -LiteralPath (Join-Path $targetRoot 'README.md') -Value '# Host Project' -Encoding UTF8
+  Set-Content -LiteralPath (Join-Path $targetRoot 'AGENTS.md') -Value @"
+# Existing Host Instructions
+
+Keep this project-specific rule.
+"@ -Encoding UTF8
+
+  Assert-True -Condition (Test-Path -LiteralPath $installerPath) -Name 'installer-exists'
+
+  $installOutput = & pwsh -NoProfile -ExecutionPolicy Bypass -File $installerPath -TargetRoot $targetRoot 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    throw "installer failed unexpectedly.`n$($installOutput -join [Environment]::NewLine)"
+  }
+
+  $workflowRoot = Join-Path $targetRoot 'docs\codex_with_cc'
+  Assert-True -Condition (Test-Path -LiteralPath $workflowRoot) -Name 'workflow-root-created'
+  Assert-True -Condition (Test-Path -LiteralPath (Join-Path $workflowRoot 'CODEX_WITH_CC.md')) -Name 'codex-with-cc-entry-created'
+  Assert-True -Condition (Test-Path -LiteralPath (Join-Path $workflowRoot 'CLAUDE_CODE_DELEGATION.md')) -Name 'delegation-doc-created'
+  Assert-True -Condition (Test-Path -LiteralPath (Join-Path $workflowRoot 'HOST_PROJECT_RULES.md')) -Name 'host-rules-created'
+  Assert-True -Condition (Test-Path -LiteralPath (Join-Path $workflowRoot 'PROJECT_MEMORY.md')) -Name 'project-memory-created'
+  Assert-True -Condition (Test-Path -LiteralPath (Join-Path $workflowRoot 'scripts\delegate_to_claude.ps1')) -Name 'delegate-script-created'
+  Assert-True -Condition (Test-Path -LiteralPath (Join-Path $workflowRoot 'scripts\verify_delegate_chain.ps1')) -Name 'chain-verifier-created'
+  Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $targetRoot 'docs\ai'))) -Name 'legacy-docs-ai-not-created'
+  Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $targetRoot 'docs\scripts\ai'))) -Name 'legacy-docs-scripts-ai-not-created'
+
+  $agentsText = Get-Content -LiteralPath (Join-Path $targetRoot 'AGENTS.md') -Raw
+  Assert-Contains -Text $agentsText -Needle 'Keep this project-specific rule.' -Name 'existing-agents-content-preserved'
+  Assert-Contains -Text $agentsText -Needle '<!-- BEGIN CODEX_WITH_CC -->' -Name 'agents-managed-block-added'
+  Assert-Contains -Text $agentsText -Needle 'docs/codex_with_cc/CODEX_WITH_CC.md' -Name 'agents-managed-block-points-to-central-entry'
+
+  foreach ($entryFileName in @('CLAUDE.md', 'GEMINI.md')) {
+    $entryText = Get-Content -LiteralPath (Join-Path $targetRoot $entryFileName) -Raw
+    Assert-Contains -Text $entryText -Needle 'docs/codex_with_cc/CODEX_WITH_CC.md' -Name "$entryFileName-points-to-central-entry"
+  }
+
+  $delegateText = Get-Content -LiteralPath (Join-Path $workflowRoot 'scripts\delegate_to_claude.ps1') -Raw
+  Assert-Contains -Text $delegateText -Needle 'docs/codex_with_cc/PROJECT_MEMORY.md' -Name 'delegate-uses-central-project-memory'
+  Assert-Contains -Text $delegateText -Needle 'docs/codex_with_cc/HOST_PROJECT_RULES.md' -Name 'delegate-uses-host-project-rules'
+  Assert-Contains -Text $delegateText -Needle 'docs/codex_with_cc/scripts/delegate_to_claude.ps1' -Name 'delegate-prompt-uses-central-script-path'
+  Assert-NotContains -Text $delegateText -Needle 'SmartDialog' -Name 'delegate-does-not-include-easy-kit-ui-rule'
+  Assert-NotContains -Text $delegateText -Needle 'pubspec.yaml' -Name 'delegate-does-not-include-easy-kit-pubspec-rule'
+  Assert-NotContains -Text $delegateText -Needle 'docs/ai/PROJECT_MEMORY.md' -Name 'delegate-does-not-use-legacy-project-memory-path'
+  Assert-NotContains -Text $delegateText -Needle 'D:\Develop\GitHub\easy_kit' -Name 'delegate-does-not-hardcode-easy-kit-path'
+
+  $secondInstallOutput = & pwsh -NoProfile -ExecutionPolicy Bypass -File $installerPath -TargetRoot $targetRoot 2>&1
+  Assert-True -Condition ($LASTEXITCODE -ne 0) -Name 'second-install-without-force-fails'
+  Assert-Contains -Text ($secondInstallOutput -join [Environment]::NewLine) -Needle '-Force' -Name 'second-install-error-names-force'
+
+  $forceOutput = & pwsh -NoProfile -ExecutionPolicy Bypass -File $installerPath -TargetRoot $targetRoot -Force 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    throw "force installer failed unexpectedly.`n$($forceOutput -join [Environment]::NewLine)"
+  }
+
+  $agentsTextAfterForce = Get-Content -LiteralPath (Join-Path $targetRoot 'AGENTS.md') -Raw
+  $managedBlockCount = ([regex]::Matches($agentsTextAfterForce, '<!-- BEGIN CODEX_WITH_CC -->')).Count
+  Assert-True -Condition ($managedBlockCount -eq 1) -Name 'force-install-keeps-one-managed-block'
+
+  Write-Host 'install tests passed' -ForegroundColor Green
+} finally {
+  if (Test-Path -LiteralPath $tempRoot) {
+    Remove-Item -LiteralPath $tempRoot -Recurse -Force
+  }
+}

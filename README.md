@@ -29,7 +29,7 @@ Codex 子代理任意模型大协作，Codex 穷鬼大救星！
 把下面这句扔给目标项目里的 Codex。
 
 ```text
-请把 https://github.com/xdd666t/codex_with_cc 调度子线程工作流集成到当前项目。
+请把 https://github.com/xdd666t/codex_with_cc 调度子代理工作流集成到当前项目。
 ```
 
 ## 使用姿势

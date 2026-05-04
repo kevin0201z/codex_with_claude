@@ -1,46 +1,9 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-function Assert-True {
-  param(
-    [Parameter(Mandatory = $true)]
-    [bool]$Condition,
-    [Parameter(Mandatory = $true)]
-    [string]$Name
-  )
-
-  if (-not $Condition) {
-    throw "[$Name] assertion failed"
-  }
-}
-
-function Assert-Contains {
-  param(
-    [Parameter(Mandatory = $true)]
-    [string]$Text,
-    [Parameter(Mandatory = $true)]
-    [string]$Needle,
-    [Parameter(Mandatory = $true)]
-    [string]$Name
-  )
-
-  Assert-True -Condition ($Text.Contains($Needle)) -Name $Name
-}
-
-function Assert-NotContains {
-  param(
-    [Parameter(Mandatory = $true)]
-    [string]$Text,
-    [Parameter(Mandatory = $true)]
-    [string]$Needle,
-    [Parameter(Mandatory = $true)]
-    [string]$Name
-  )
-
-  Assert-True -Condition (-not $Text.Contains($Needle)) -Name $Name
-}
-
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+. (Join-Path $repoRoot 'docs\codex_with_cc\scripts\test_helpers.ps1')
+
 $installerPath = Join-Path $repoRoot 'install_codex_with_cc.ps1'
 $sourceWorkflowRoot = Join-Path $repoRoot 'docs\codex_with_cc'
 $legacyTemplatesRoot = Join-Path $repoRoot 'templates'
@@ -128,6 +91,16 @@ Keep this project-specific rule.
   Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $workflowRoot 'PROJECT_MEMORY.md'))) -Name 'reinstall-removes-stale-project-memory'
   Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $taskRoot '.gitkeep'))) -Name 'reinstall-removes-stale-gitkeep'
   Assert-True -Condition (Test-Path -LiteralPath $taskRoot) -Name 'reinstall-recreates-tasks-dir'
+
+  $selfInstallRoot = Join-Path $tempRoot 'self-install-source'
+  New-Item -ItemType Directory -Path (Join-Path $selfInstallRoot 'docs') -Force | Out-Null
+  Copy-Item -LiteralPath $installerPath -Destination (Join-Path $selfInstallRoot 'install_codex_with_cc.ps1') -Force
+  Copy-Item -LiteralPath $sourceWorkflowRoot -Destination (Join-Path $selfInstallRoot 'docs\codex_with_cc') -Recurse -Force
+  $selfInstallOutput = & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $selfInstallRoot 'install_codex_with_cc.ps1') -TargetRoot $selfInstallRoot 2>&1
+  Assert-True -Condition ($LASTEXITCODE -ne 0) -Name 'self-install-refuses-source-target-overlap'
+  Assert-Contains -Text ($selfInstallOutput -join [Environment]::NewLine) -Needle 'Refusing to install codex_with_cc into its own source repository' -Name 'self-install-error-is-clear'
+  Assert-True -Condition (Test-Path -LiteralPath (Join-Path $selfInstallRoot 'docs\codex_with_cc\CODEX_WITH_CC.md')) -Name 'self-install-keeps-source-workflow'
+  Assert-True -Condition (Test-Path -LiteralPath (Join-Path $selfInstallRoot 'docs\codex_with_cc\scripts\delegate_to_claude.ps1')) -Name 'self-install-keeps-source-scripts'
 
   Write-Host 'install tests passed' -ForegroundColor Green
 } finally {

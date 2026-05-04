@@ -1,33 +1,9 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-function Assert-True {
-  param(
-    [Parameter(Mandatory = $true)]
-    [bool]$Condition,
-    [Parameter(Mandatory = $true)]
-    [string]$Name
-  )
-
-  if (-not $Condition) {
-    throw "[$Name] assertion failed"
-  }
-}
-
-function Assert-Contains {
-  param(
-    [Parameter(Mandatory = $true)]
-    [string]$Text,
-    [Parameter(Mandatory = $true)]
-    [string]$Needle,
-    [Parameter(Mandatory = $true)]
-    [string]$Name
-  )
-
-  Assert-True -Condition ($Text.Contains($Needle)) -Name $Name
-}
-
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+. (Join-Path $repoRoot 'docs\codex_with_cc\scripts\test_helpers.ps1')
+
 $aiInstallPath = Join-Path $repoRoot 'docs\AI_INSTALL.md'
 
 Assert-True -Condition (Test-Path -LiteralPath $aiInstallPath) -Name 'ai-install-doc-exists'
@@ -42,6 +18,7 @@ Assert-Contains -Text $aiInstallText -Needle '只要任务需要进入子代理�
 Assert-Contains -Text $aiInstallText -Needle '.codex/codex_with_cc/tasks' -Name 'ai-install-doc-moves-task-files-under-codex'
 Assert-Contains -Text $aiInstallText -Needle '.codex/codex_with_cc/tasks/<yyyyMMdd>/<HHmmssfff>-<short-id>-<task-file>.md' -Name 'ai-install-doc-uses-dated-unique-task-file'
 Assert-Contains -Text $aiInstallText -Needle '.gitignore` 包含 `.codex/`' -Name 'ai-install-doc-ensures-codex-is-ignored'
+Assert-Contains -Text $aiInstallText -Needle '安装器不支持把源仓库自身作为 `-TargetRoot`；请使用外部目标项目目录，避免安装时移除源工作流目录。' -Name 'ai-install-doc-forbids-self-target-install'
 Assert-Contains -Text $aiInstallText -Needle '不要追问“要保留上游原样接入，还是顺手按当前项目定制”这类范围选择题。' -Name 'ai-install-doc-forbids-unnecessary-scope-questions'
 
 Write-Host 'AI install doc tests passed' -ForegroundColor Green

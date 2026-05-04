@@ -167,9 +167,17 @@ function Write-SessionPoolState {
   if (-not (Test-Path -LiteralPath $parent)) {
     New-Item -ItemType Directory -Path $parent -Force | Out-Null
   }
-  $tmpPath = "$Path.tmp"
-  $State | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $tmpPath -Encoding UTF8
-  Move-Item -LiteralPath $tmpPath -Destination $Path -Force
+  $fileName = [System.IO.Path]::GetFileName($Path)
+  $tmpPath = Join-Path $parent ('.{0}.{1}.tmp' -f $fileName, ([guid]::NewGuid().ToString('N')))
+  try {
+    $json = $State | ConvertTo-Json -Depth 12
+    [System.IO.File]::WriteAllText($tmpPath, $json, (New-Object System.Text.UTF8Encoding($false)))
+    Move-Item -LiteralPath $tmpPath -Destination $Path -Force
+  } finally {
+    if (Test-Path -LiteralPath $tmpPath) {
+      Remove-Item -LiteralPath $tmpPath -Force -ErrorAction SilentlyContinue
+    }
+  }
 }
 
 function Invoke-SessionStateUpdate {

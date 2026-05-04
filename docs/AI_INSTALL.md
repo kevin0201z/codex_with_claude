@@ -112,6 +112,8 @@ If the task involves child agents, subagents, delegation, or any worker-executio
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\install_codex_with_cc.ps1 -TargetRoot <target-project>
 ```
 
+安装器不支持把源仓库自身作为 `-TargetRoot`；请使用外部目标项目目录，避免安装时移除源工作流目录。
+
 如果目标项目已经装过，直接再次执行同一条命令即可。安装脚本默认会先删除旧的 `docs/codex_with_cc` 再重装，避免已经废弃的文档、脚本或占位文件残留在目标项目里。
 
 如果用户没有额外限制，Windows 下默认动作应该是：

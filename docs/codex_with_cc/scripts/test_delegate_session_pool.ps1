@@ -1,33 +1,7 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-function Assert-True {
-  param(
-    [Parameter(Mandatory = $true)]
-    [bool]$Condition,
-    [Parameter(Mandatory = $true)]
-    [string]$Name
-  )
-
-  if (-not $Condition) {
-    throw "[$Name] assertion failed"
-  }
-}
-
-function Assert-Equal {
-  param(
-    [Parameter(Mandatory = $true)]
-    [string]$Actual,
-    [Parameter(Mandatory = $true)]
-    [string]$Expected,
-    [Parameter(Mandatory = $true)]
-    [string]$Name
-  )
-
-  if ($Actual -ne $Expected) {
-    throw "[$Name] expected '$Expected' but got '$Actual'"
-  }
-}
+. (Join-Path $PSScriptRoot 'test_helpers.ps1')
 
 function Write-DelegateArtifact {
   param(
@@ -99,33 +73,6 @@ None
   $fullStatus | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $statusPath -Encoding UTF8
 }
 
-function Invoke-DelegateWorkerScript {
-  param(
-    [Parameter(Mandatory = $true)]
-    [string[]]$ArgumentList,
-    [switch]$SetChildThreadMarker
-  )
-
-  $markerName = 'CODEX_CLAUDE_CHILD_THREAD'
-  $originalMarker = [Environment]::GetEnvironmentVariable($markerName, 'Process')
-  try {
-    if ($SetChildThreadMarker) {
-      [Environment]::SetEnvironmentVariable($markerName, '1', 'Process')
-    } else {
-      [Environment]::SetEnvironmentVariable($markerName, $null, 'Process')
-    }
-
-    $scriptPath = Join-Path $PSScriptRoot 'delegate_to_claude.ps1'
-    $output = & pwsh -NoProfile -File $scriptPath @ArgumentList 2>&1
-    return [pscustomobject]@{
-      ExitCode = $LASTEXITCODE
-      Output = @($output)
-    }
-  } finally {
-    [Environment]::SetEnvironmentVariable($markerName, $originalMarker, 'Process')
-  }
-}
-
 function Invoke-DelegateDryRun {
   param(
     [Parameter(Mandatory = $true)]
@@ -181,6 +128,27 @@ try {
   Assert-True -Condition ($null -ne (Get-Command Acquire-ClaudeSessionLease -ErrorAction SilentlyContinue)) -Name 'session-pool-helper-exports-acquire'
   Assert-True -Condition ($null -ne (Get-Command Release-ClaudeSessionLease -ErrorAction SilentlyContinue)) -Name 'session-pool-helper-exports-release'
   Assert-True -Condition ($null -ne (Get-Command Reset-ClaudeSessionLeaseForFreshSession -ErrorAction SilentlyContinue)) -Name 'session-pool-helper-exports-reset'
+
+  $atomicWriteRoot = Join-Path $tempRoot 'atomic-write'
+  New-Item -ItemType Directory -Path $atomicWriteRoot -Force | Out-Null
+  $atomicStatePath = Join-Path $atomicWriteRoot 'state.json'
+  $fixedTempPath = "$atomicStatePath.tmp"
+  $fixedTempLock = [System.IO.File]::Open(
+    $fixedTempPath,
+    [System.IO.FileMode]::OpenOrCreate,
+    [System.IO.FileAccess]::ReadWrite,
+    [System.IO.FileShare]::None
+  )
+  try {
+    $stateForAtomicWrite = New-SessionPoolState -Key 'unique-temp-write-test'
+    Write-SessionPoolState -Path $atomicStatePath -State $stateForAtomicWrite
+  } finally {
+    $fixedTempLock.Dispose()
+  }
+  Assert-True -Condition (Test-Path -LiteralPath $atomicStatePath) -Name 'session-state-write-succeeds-when-fixed-temp-locked'
+  $atomicState = Get-Content -LiteralPath $atomicStatePath -Raw | ConvertFrom-Json
+  Assert-Equal -Actual ([string]$atomicState.sessionKey) -Expected 'unique-temp-write-test' -Name 'session-state-write-uses-requested-state'
+  Assert-True -Condition (Test-Path -LiteralPath $fixedTempPath) -Name 'session-state-write-does-not-reuse-fixed-temp-path'
 
   $markerFailure = Invoke-DelegateWorkerScript -ArgumentList @(
     '-Task', 'marker failure probe',

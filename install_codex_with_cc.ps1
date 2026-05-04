@@ -91,6 +91,7 @@ $sourceWorkflowRoot = Join-Path $installerRoot 'docs\codex_with_cc'
 if (-not (Test-Path -LiteralPath $sourceWorkflowRoot)) {
   throw "Workflow source was not found: $sourceWorkflowRoot"
 }
+$resolvedSourceWorkflowRoot = (Resolve-Path -LiteralPath $sourceWorkflowRoot).Path
 
 $resolvedTargetRoot = Get-FullPath -Path $TargetRoot
 if (-not (Test-Path -LiteralPath $resolvedTargetRoot)) {
@@ -102,6 +103,11 @@ $docsRoot = Join-Path $resolvedTargetRoot 'docs'
 $workflowRoot = Join-Path $docsRoot 'codex_with_cc'
 $codexRoot = Join-Path $resolvedTargetRoot '.codex'
 $taskRoot = Join-Path $codexRoot 'codex_with_cc\tasks'
+$resolvedWorkflowRoot = [System.IO.Path]::GetFullPath($workflowRoot)
+
+if ([string]::Equals($resolvedSourceWorkflowRoot, $resolvedWorkflowRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+  throw "Refusing to install codex_with_cc into its own source repository. Choose a different -TargetRoot so the installer does not remove its source workflow directory: $resolvedSourceWorkflowRoot"
+}
 
 if (Test-Path -LiteralPath $workflowRoot) {
   if (-not (Test-PathInside -Child $workflowRoot -Parent $resolvedTargetRoot)) {

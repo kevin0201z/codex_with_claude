@@ -1,62 +1,7 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-function Assert-True {
-  param(
-    [Parameter(Mandatory = $true)]
-    [bool]$Condition,
-    [Parameter(Mandatory = $true)]
-    [string]$Name
-  )
-
-  if (-not $Condition) {
-    throw "[$Name] assertion failed"
-  }
-}
-
-function Assert-Equal {
-  param(
-    [Parameter(Mandatory = $true)]
-    [AllowNull()]
-    [object]$Actual,
-    [Parameter(Mandatory = $true)]
-    [AllowNull()]
-    [object]$Expected,
-    [Parameter(Mandatory = $true)]
-    [string]$Name
-  )
-
-  if ($Actual -ne $Expected) {
-    throw "[$Name] expected '$Expected' but got '$Actual'"
-  }
-}
-
-function Invoke-DelegateWorkerScript {
-  param(
-    [Parameter(Mandatory = $true)]
-    [string[]]$ArgumentList,
-    [switch]$SetChildThreadMarker
-  )
-
-  $markerName = 'CODEX_CLAUDE_CHILD_THREAD'
-  $originalMarker = [Environment]::GetEnvironmentVariable($markerName, 'Process')
-  try {
-    if ($SetChildThreadMarker) {
-      [Environment]::SetEnvironmentVariable($markerName, '1', 'Process')
-    } else {
-      [Environment]::SetEnvironmentVariable($markerName, $null, 'Process')
-    }
-
-    $scriptPath = Join-Path $PSScriptRoot 'delegate_to_claude.ps1'
-    $output = & pwsh -NoProfile -File $scriptPath @ArgumentList 2>&1
-    return [pscustomobject]@{
-      ExitCode = $LASTEXITCODE
-      Output = @($output)
-    }
-  } finally {
-    [Environment]::SetEnvironmentVariable($markerName, $originalMarker, 'Process')
-  }
-}
+. (Join-Path $PSScriptRoot 'test_helpers.ps1')
 
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) "codex_with_cc_delegate_runtime_$([guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null

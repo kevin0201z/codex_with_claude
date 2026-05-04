@@ -35,8 +35,22 @@
 把下面这句扔给目标项目里的 Codex。
 
 ```text
-请把 https://github.com/xdd666t/codex_with_cc 调度子线程工作流集成或更新到当前项目。
+请把 https://github.com/xdd666t/codex_with_cc 调度子代理工作流集成或更新到当前项目。
 ```
+
+## 效果
+
+- 创建子代理
+
+![image-20260504101914934](https://raw.githubusercontent.com/xdd666t/MyData/master/pic/flutter/blog/20260504104419123.png)
+
+- 子代理执行Claude cli
+
+![image-20260504101840375](https://raw.githubusercontent.com/xdd666t/MyData/master/pic/flutter/blog/20260504104430267.png)
+
+- 结果打回，重新验证
+
+![image-20260504103024065](https://raw.githubusercontent.com/xdd666t/MyData/master/pic/flutter/blog/20260504104439475.png)
 
 ## 使用姿势
 

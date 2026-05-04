@@ -115,7 +115,7 @@ $taskContent = @"
 - SessionKey: $SessionKey
 - ArtifactRoot: $artifactRoot
 - SessionMode: $($taskSpec.SessionMode)
-- Child-thread only: This task must run inside a Codex spawn_agent child thread with model 'gpt-5.3-codex', reasoning_effort 'high', fork_context 'false'.
+- Child-thread only: This task must run inside a Codex spawn_agent child thread with model 'gpt-5.3-codex', reasoning_effort 'medium', fork_context 'false'.
 - Required child-thread marker: set process environment CODEX_CLAUDE_CHILD_THREAD=1 before invoking the worker entry script.
 - Worker entry script: docs/codex_with_cc/scripts/delegate_to_claude.ps1
 - Required worker arguments: -TaskFile "$taskPath" -ArtifactRoot "$artifactRoot" -SessionKey "$SessionKey" $($taskSpec.SessionFlags) -BypassPermissions
@@ -143,7 +143,7 @@ Required Codex orchestration rules:
 - The Codex main thread may only create spawn_agent child threads and collect results.
 - Every Claude worker must run inside a child thread with:
   - model: gpt-5.3-codex
-  - reasoning_effort: high
+  - reasoning_effort: medium
   - fork_context: false
 - Every child thread must set CODEX_CLAUDE_CHILD_THREAD=1 and then call docs/codex_with_cc/scripts/delegate_to_claude.ps1 with -TaskFile.
 - Do not run Claude CLI or delegate_to_claude.ps1 directly from the main thread.

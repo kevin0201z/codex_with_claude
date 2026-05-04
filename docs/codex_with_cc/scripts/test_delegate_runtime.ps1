@@ -111,6 +111,7 @@ try {
   }
   $dryRunConfig = Get-Content -LiteralPath ((Get-ChildItem -LiteralPath $dryRunArtifactRoot -Filter 'config_*.json' | Select-Object -First 1).FullName) -Raw | ConvertFrom-Json
   $dryRunStatus = Get-Content -LiteralPath ((Get-ChildItem -LiteralPath $dryRunArtifactRoot -Filter 'status_*.json' | Select-Object -First 1).FullName) -Raw | ConvertFrom-Json
+  Assert-True -Condition (-not ($dryRunConfig.PSObject.Properties.Name -contains 'effort')) -Name 'dry-run-config-omits-effort'
   Assert-Equal -Actual ([int]$dryRunConfig.maxRetryCount) -Expected 7 -Name 'dry-run-config-records-max-retry-count'
   Assert-Equal -Actual ([int]$dryRunStatus.maxRetryCount) -Expected 7 -Name 'dry-run-status-records-max-retry-count'
 
@@ -152,13 +153,13 @@ exit /b 0
 
   $cliArgs = @(New-ClaudeDelegateCliArgs `
     -Model 'sonnet' `
-    -Effort 'high' `
     -SessionName 'test-session' `
     -SessionId ([guid]::NewGuid().ToString()) `
     -Resume $false `
     -MaxBudgetUsd $null `
     -BypassPermissions $true `
     -PromptText 'hello')
+  Assert-True -Condition (-not ($cliArgs -contains '--effort')) -Name 'cli-args-omit-effort'
   Assert-True -Condition ($cliArgs -contains '--verbose') -Name 'cli-args-include-verbose-for-stream-json'
   Assert-True -Condition ($cliArgs -contains '--print') -Name 'cli-args-include-explicit-print-flag'
   Assert-True -Condition ($cliArgs -contains 'stream-json') -Name 'cli-args-include-stream-json'

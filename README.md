@@ -2,17 +2,21 @@
 
 # Codex 穷鬼大救星！
 
-Codex 子代理任意模型大协作，Codex 穷鬼大救星！
+大家也知道，Codex 现在模型越来越叼，干活越来越猛，写代码、拆任务、审方案那叫一个丝滑。
 
-先把话放在前面：装好 Claude Code，装好 CC Switch，再通过 CC Switch 把 Claude Code 后面的 API 换成 DeepSeek。
+但问题也很现实：模型越叼，额度烧起来越快。长上下文一开，多子代理一跑，token 哗哗往外流，爽是真的爽，心疼也是真的心疼。
 
-恭喜你，Codex Plus 基本就可以爽用了：Codex 负责规划任务、统筹上下文、审核结果；子代理里再通过 Claude Code 让 DeepSeek 去干活。
+穷则思变，富则...算了，咱是穷鬼，富哥就不需要用这套工作流了！
 
-重点是 DeepSeek 那个夸张的缓存命中率，俩分钱百万 token 的体感一出来，基本告别 token 焦虑。
+于是有了这套穷鬼工作流：让 Codex 继续当最聪明的 leader，负责规划、拆解、调度和验收；真正吃 token 的脏活累活，交给 Codex 子代理里的 Claude Code，再通过 CC Switch 把后端切到 DeepSeek。
 
-人民的 DeepSeek，小 D 的恩情还不完😭。
+这样一来，Codex Plus 基本就可以爽用无忧。主线程保持清醒，子代理疯狂干活，DeepSeek 靠夸张缓存命中率把成本压下去，长任务、多代理、大范围代码探索都能放开玩。
 
-这个仓库做的事情很朴素：把一套 `Codex -> Codex 子代理 -> Claude Code CLI` 的委派工作流复制进任意项目，让 Codex 当 leader，Claude Code/DeepSeek 当大头兵。脏活累活、长上下文探索、大范围改代码、互相找茬，都扔给子代理；主 Codex 只管拆解、调度、验收、打回重改。
+这一切都基于 DeepSeek 的离谱低价！在加上缓存命中价格百万token俩分钱！长任务、多代理、大范围代码探索，给我往死里造！反正苦力便宜，Token 成本四舍五入等于不要钱！
+
+**人民的 DeepSeek，小 D 的恩情还不完😭**
+
+<img src="https://raw.githubusercontent.com/xdd666t/MyData/master/pic/flutter/blog/20260504115715483.png" alt="ChatGPT Image 2026年5月4日 11_53_50" style="zoom: 50%;" />
 
 ## 你需要先准备什么
 

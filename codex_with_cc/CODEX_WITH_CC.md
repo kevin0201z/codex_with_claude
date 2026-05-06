@@ -7,12 +7,12 @@ This document is the portable entry point for the Codex -> Codex child agent -> 
 
 ## Core Contract
 1. The Codex main thread must not run `claude` directly.
-2. The Codex main thread must not run `docs/codex_with_cc/windows_scripts/delegate_to_claude.ps1` directly, except for the trusted local terminal fallback below.
+2. The Codex main thread must not run `docs/codex_with_cc/windows_scripts/delegate_to_claude.ps1` or `docs/codex_with_cc/unix_scripts/delegate_to_claude.sh` directly, except for the trusted local terminal fallback below.
 3. Every Claude Code delegation must be carried by a Codex `spawn_agent` child thread.
-4. The child thread must set `CODEX_CLAUDE_CHILD_THREAD=1` before invoking `delegate_to_claude.ps1`.
+4. The child thread must set `CODEX_CLAUDE_CHILD_THREAD=1` before invoking the delegate script.
 5. The child thread should use `model: gpt-5.3-codex`, `reasoning_effort: medium`, and `fork_context: false`.
-6. `delegate_to_claude.ps1` must not pass `--effort`; Claude Code should use its configured default effort.
-7. Medium and large tasks should be written to a dated, uniquely named task file under `.codex/codex_with_cc/tasks/<yyyyMMdd>/<HHmmssfff>-<short-id>-<task-name>.md` and passed with `-TaskFile`.
+6. The delegate script must not pass `--effort`; Claude Code should use its configured default effort.
+7. Medium and large tasks should be written to a dated, uniquely named task file under `.codex/codex_with_cc/tasks/<yyyyMMdd>/<HHmmssfff>-<short-id>-<task-name>.md` and passed with `-TaskFile` (Windows) or `-f` (Linux/macOS).
 8. Claude workers must keep changes inside the delegated scope, run the required verification, and finish with the exact report headings defined in this document.
 9. If the Codex sandbox or delegated runner cannot execute the same worker command, run that exact command in a trusted local terminal instead.
 10. Claude workers must read and follow all applicable Codex project skills under `.codex` before implementing or changing behavior.
@@ -29,7 +29,7 @@ Do not replace this with the default Codex subagent flow, a direct `claude` comm
 
 ## Session Modes
 - `PrimaryReuse`: default serial mode. Reuses the main Claude session for continuity.
-- `PrimaryAnchor`: parallel-batch anchor. Its result becomes the main reusable context for later serial work.
+- `PrimaryAnchor`: semantic marker for the anchor task in a parallel batch. Behaviorally identical to `PrimaryReuse` (reuses the main session), but signals that this run's result becomes the reusable context for subsequent serial work in the same session.
 - `ParallelPool`: independent parallel side work. Uses reusable pool sessions without writing to the main session.
 
 Only use `-AllowParallel` when task scopes are independent.
@@ -58,9 +58,15 @@ Delegation artifacts are written under `.codex/codex_with_cc/claude-delegate` by
 - `trace_<RunId>.log`
 - `session-pools/<SessionKey>.json`
 
-Use `verify_delegate_artifacts.ps1` for each run and `verify_delegate_chain.ps1` for multi-run continuity checks.
+Use `verify_delegate_artifacts.ps1` (Windows) or `verify_delegate_artifacts.sh` (Linux/macOS) for each run and `verify_delegate_chain.ps1` (Windows) or `verify_delegate_chain.sh` (Linux/macOS) for multi-run continuity checks.
 
-## Standard Worker Command
+## Platform-Specific Scripts
+
+- Windows: `docs/codex_with_cc/windows_scripts/delegate_to_claude.ps1`
+- Linux/macOS: `docs/codex_with_cc/unix_scripts/delegate_to_claude.sh`
+
+## Standard Worker Command (Windows)
+
 Normally run this inside a Codex child thread. If the Codex sandbox or delegated runner cannot execute it, use the trusted local terminal fallback above:
 
 ```powershell
@@ -72,18 +78,47 @@ pwsh -NoProfile -File .\docs\codex_with_cc\windows_scripts\delegate_to_claude.ps
   -BypassPermissions
 ```
 
-Use `PrimaryAnchor -AllowParallel` for the main branch of a parallel batch and `ParallelPool -AllowParallel` for independent side work.
+## Standard Worker Command (Linux/macOS)
+
+```bash
+export CODEX_CLAUDE_CHILD_THREAD=1
+bash docs/codex_with_cc/unix_scripts/delegate_to_claude.sh \
+  -f .codex/codex_with_cc/tasks/<yyyyMMdd>/<HHmmssfff>-<short-id>-<task-file>.md \
+  --session-mode PrimaryReuse \
+  --session-key <stable-session-key> \
+  --bypass-permissions
+```
+
+Use `PrimaryAnchor --allow-parallel` for the main branch of a parallel batch and `ParallelPool --allow-parallel` for independent side work.
 
 ## Verification
+
 Run the local regression tests after installing or changing this workflow:
+
+### Windows
 
 ```powershell
 pwsh -NoProfile -File .\docs\codex_with_cc\windows_scripts\test_delegate_runtime.ps1
 pwsh -NoProfile -File .\docs\codex_with_cc\windows_scripts\test_delegate_session_pool.ps1
 ```
 
+### Linux/macOS
+
+```bash
+bash docs/codex_with_cc/unix_scripts/test_delegate_runtime.sh
+bash docs/codex_with_cc/unix_scripts/test_delegate_session_pool.sh
+```
+
 Generate a real chain validation scaffold with:
+
+### Windows
 
 ```powershell
 pwsh -NoProfile -File .\docs\codex_with_cc\windows_scripts\run_real_delegate_chain_validation.ps1
+```
+
+### Linux/macOS
+
+```bash
+bash docs/codex_with_cc/unix_scripts/run_real_delegate_chain_validation.sh
 ```

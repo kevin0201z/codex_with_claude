@@ -75,14 +75,11 @@ if ([string]$config.outputPath -ne $outputPath) {
 if ([string]$status.outputPath -ne $outputPath) {
   throw "Status outputPath mismatch. Expected: $outputPath ; Actual: $([string]$status.outputPath)"
 }
-if ([string]$status.status -notin @('starting', 'running', 'completed', 'failed')) {
-  throw "Unexpected delegate status value: $([string]$status.status)"
+if ([string]$status.status -notin @('completed', 'failed')) {
+  throw "Delegate status must be 'completed' or 'failed'. Current: $([string]$status.status)"
 }
 $isCompleted = ([string]$status.status -eq 'completed')
 $isStructuredFailure = ([string]$status.status -eq 'failed')
-if (-not $isCompleted -and -not $isStructuredFailure) {
-  throw "Delegate status is neither completed nor failed: $([string]$status.status)"
-}
 if (-not (Test-ClaudeDelegateHasFinalResult -Path $outputPath)) {
   throw "Delegate output does not contain a Final Result heading: $outputPath"
 }

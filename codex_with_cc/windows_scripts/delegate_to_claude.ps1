@@ -94,6 +94,13 @@ if ([string]::IsNullOrWhiteSpace($taskText)) {
 $Scope = @(Normalize-ClaudeDelegateList -Items $Scope)
 $Tests = @(Normalize-ClaudeDelegateList -Items $Tests)
 
+if ($LockTimeoutSeconds -lt 0) {
+  throw "LockTimeoutSeconds must be >= 0. Current: $LockTimeoutSeconds"
+}
+if ($LockPollMilliseconds -lt 50) {
+  throw "LockPollMilliseconds must be >= 50. Current: $LockPollMilliseconds"
+}
+
 if (-not (Test-Path -LiteralPath $resolvedArtifactRoot)) {
   New-Item -ItemType Directory -Path $resolvedArtifactRoot -Force | Out-Null
 }
@@ -331,13 +338,6 @@ Risks Or Follow-ups
 $lockStream = $null
 try {
   if (-not $AllowParallel) {
-    if ($LockTimeoutSeconds -lt 0) {
-      throw "LockTimeoutSeconds must be >= 0. Current: $LockTimeoutSeconds"
-    }
-    if ($LockPollMilliseconds -lt 50) {
-      throw "LockPollMilliseconds must be >= 50. Current: $LockPollMilliseconds"
-    }
-
     $lockDeadline = (Get-Date).AddSeconds($LockTimeoutSeconds)
     while ($true) {
       try {
@@ -364,7 +364,7 @@ try {
           $writer.Dispose()
         }
         break
-      } catch [System.IO.IOException] {
+      } catch {
         if ((Get-Date) -ge $lockDeadline) {
           $lockSnapshot = ''
           if (Test-Path -LiteralPath $lockPath) {

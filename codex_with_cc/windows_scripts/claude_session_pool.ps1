@@ -86,6 +86,7 @@ function Test-LeaseExpired {
   try {
     $leasedAt = [DateTimeOffset]::Parse([string]$Item.leasedAt)
   } catch {
+    Write-Warning "Failed to parse leasedAt timestamp '$($Item.leasedAt)': $($_.Exception.Message)"
     return $true
   }
   return ([DateTimeOffset]::Now - $leasedAt).TotalSeconds -ge $TimeoutSeconds

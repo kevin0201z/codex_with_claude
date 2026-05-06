@@ -34,7 +34,7 @@ $taskSpecs = @(
     FileName = 'anchor-read-protocol.md'
     SessionMode = 'PrimaryAnchor'
     SessionFlags = '-SessionMode PrimaryAnchor -AllowParallel'
-    Scope = "docs/codex_with_cc/windows_scripts/delegate_to_claude.ps1`ndocs/codex_with_cc/windows_scripts/claude_session_pool.ps1`ndocs/codex_with_cc/CODEX_WITH_CC.md"
+    Scope = "docs/codex_with_cc/windows_scripts/delegate_to_claude.ps1;docs/codex_with_cc/windows_scripts/claude_session_pool.ps1;docs/codex_with_cc/CODEX_WITH_CC.md"
     Tests = "pwsh -NoProfile -File .\docs\codex_with_cc\windows_scripts\verify_delegate_artifacts.ps1 -RunId <anchor-run-id> -ArtifactRoot '$artifactRoot'"
     Task = @"
 只读验证任务：通过 Codex spawn_agent 子线程承载 Claude worker，审查 delegate_to_claude.ps1 与 claude_session_pool.ps1 的主线锚点行为。
@@ -49,7 +49,7 @@ $taskSpecs = @(
     FileName = 'parallel-artifact-audit.md'
     SessionMode = 'ParallelPool'
     SessionFlags = '-SessionMode ParallelPool -AllowParallel'
-    Scope = "docs/codex_with_cc/windows_scripts/verify_delegate_artifacts.ps1`ndocs/codex_with_cc/windows_scripts/verify_delegate_chain.ps1`n.codex/codex_with_cc/claude-delegate"
+    Scope = "docs/codex_with_cc/windows_scripts/verify_delegate_artifacts.ps1;docs/codex_with_cc/windows_scripts/verify_delegate_chain.ps1;.codex/codex_with_cc/claude-delegate"
     Tests = "pwsh -NoProfile -File .\docs\codex_with_cc\windows_scripts\verify_delegate_artifacts.ps1 -RunId <parallel-a-run-id> -ArtifactRoot '$artifactRoot'"
     Task = @"
 只读验证任务：审查新 schema delegate artifacts 与 verify_delegate_artifacts.ps1 的契约要求。
@@ -64,7 +64,7 @@ $taskSpecs = @(
     FileName = 'parallel-stream-audit.md'
     SessionMode = 'ParallelPool'
     SessionFlags = '-SessionMode ParallelPool -AllowParallel'
-    Scope = "docs/codex_with_cc/windows_scripts/claude_delegate_backend_helpers.ps1`n.codex/codex_with_cc/claude-delegate"
+    Scope = "docs/codex_with_cc/windows_scripts/claude_delegate_backend_helpers.ps1;.codex/codex_with_cc/claude-delegate"
     Tests = "pwsh -NoProfile -File .\docs\codex_with_cc\windows_scripts\verify_delegate_artifacts.ps1 -RunId <parallel-b-run-id> -ArtifactRoot '$artifactRoot'"
     Task = @"
 只读验证任务：审查 claude_delegate_backend_helpers.ps1 的 stream capture、retry decision 与 trace/rawStream 行为。
@@ -79,7 +79,7 @@ $taskSpecs = @(
     FileName = 'reuse-cross-check-1.md'
     SessionMode = 'PrimaryReuse'
     SessionFlags = '-SessionMode PrimaryReuse'
-    Scope = "docs/codex_with_cc/windows_scripts/delegate_to_claude.ps1`ndocs/codex_with_cc/windows_scripts/claude_delegate_backend_helpers.ps1`ndocs/codex_with_cc/windows_scripts/claude_session_pool.ps1`ndocs/codex_with_cc/windows_scripts/verify_delegate_artifacts.ps1`ndocs/codex_with_cc/windows_scripts/verify_delegate_chain.ps1`ndocs/codex_with_cc/windows_scripts/run_real_delegate_chain_validation.ps1`ndocs/codex_with_cc/windows_scripts/test_delegate_runtime.ps1`ndocs/codex_with_cc/windows_scripts/test_delegate_session_pool.ps1`ndocs/codex_with_cc/CODEX_WITH_CC.md"
+    Scope = "docs/codex_with_cc/windows_scripts/delegate_to_claude.ps1;docs/codex_with_cc/windows_scripts/claude_delegate_backend_helpers.ps1;docs/codex_with_cc/windows_scripts/claude_session_pool.ps1;docs/codex_with_cc/windows_scripts/verify_delegate_artifacts.ps1;docs/codex_with_cc/windows_scripts/verify_delegate_chain.ps1;docs/codex_with_cc/windows_scripts/run_real_delegate_chain_validation.ps1;docs/codex_with_cc/windows_scripts/test_delegate_runtime.ps1;docs/codex_with_cc/windows_scripts/test_delegate_session_pool.ps1;docs/codex_with_cc/CODEX_WITH_CC.md"
     Tests = "pwsh -NoProfile -File .\docs\codex_with_cc\windows_scripts\verify_delegate_artifacts.ps1 -RunId <reuse-1-run-id> -ArtifactRoot '$artifactRoot'"
     Task = @"
 真实复核/返工任务：在锚点与并发旁路完成后，使用同一 SessionKey 续接主线，对前三份结果做交叉复核。
@@ -96,7 +96,7 @@ $taskSpecs = @(
     FileName = 'reuse-cross-check-2.md'
     SessionMode = 'PrimaryReuse'
     SessionFlags = '-SessionMode PrimaryReuse'
-    Scope = "docs/codex_with_cc/windows_scripts/delegate_to_claude.ps1`ndocs/codex_with_cc/windows_scripts/claude_delegate_backend_helpers.ps1`ndocs/codex_with_cc/windows_scripts/claude_session_pool.ps1`ndocs/codex_with_cc/windows_scripts/verify_delegate_artifacts.ps1`ndocs/codex_with_cc/windows_scripts/verify_delegate_chain.ps1`ndocs/codex_with_cc/windows_scripts/run_real_delegate_chain_validation.ps1`ndocs/codex_with_cc/windows_scripts/test_delegate_runtime.ps1`ndocs/codex_with_cc/windows_scripts/test_delegate_session_pool.ps1`ndocs/codex_with_cc/CODEX_WITH_CC.md"
+    Scope = "docs/codex_with_cc/windows_scripts/delegate_to_claude.ps1;docs/codex_with_cc/windows_scripts/claude_delegate_backend_helpers.ps1;docs/codex_with_cc/windows_scripts/claude_session_pool.ps1;docs/codex_with_cc/windows_scripts/verify_delegate_artifacts.ps1;docs/codex_with_cc/windows_scripts/verify_delegate_chain.ps1;docs/codex_with_cc/windows_scripts/run_real_delegate_chain_validation.ps1;docs/codex_with_cc/windows_scripts/test_delegate_runtime.ps1;docs/codex_with_cc/windows_scripts/test_delegate_session_pool.ps1;docs/codex_with_cc/CODEX_WITH_CC.md"
     Tests = "pwsh -NoProfile -File .\docs\codex_with_cc\windows_scripts\verify_delegate_artifacts.ps1 -RunId <reuse-2-run-id> -ArtifactRoot '$artifactRoot'"
     Task = @"
 只读验证任务：再次在同一 SessionKey 下顺序续接主线，验证高缓存命中不是偶发成功。

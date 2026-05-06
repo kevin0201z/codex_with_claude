@@ -2,21 +2,6 @@
 >
 > 下面内容是给人看的，AI无需阅读。
 
-# Codex 穷鬼大救星！
-
-大家也知道，Codex 现在模型越来越叼，干活越来越猛，写代码、拆任务、审方案那叫一个丝滑。
-
-但问题也很现实：模型越叼，额度烧起来越快。
-
-穷则思变，富则...算了，咱是穷鬼，富哥就不需要用这套工作流了！
-
-于是有了这套穷鬼工作流：让 Codex 继续当最聪明的 leader，负责规划、拆解、调度和验收；真正吃 token 的脏活累活，交给 Codex 子代理里的 Claude Code，再通过 CC Switch 把后端切到 DeepSeek。
-
-这样一来，Codex Plus 基本就可以爽用无忧。主线程保持清醒，子代理疯狂干活，DeepSeek 靠夸张缓存命中率把成本压下去，长任务、多代理、大范围代码探索都能放开玩。
-
-这一切都基于 DeepSeek 的离谱低价！在加上缓存命中价格百万token俩分钱！长任务、多代理、大范围代码探索，给我往死里造！反正苦力便宜，Token 成本四舍五入等于不要钱！
-
-
 # 你需要先准备什么
 
 1. 安装 Claude Code。
@@ -34,27 +19,6 @@
 ```text
 请把 https://github.com/kevin0201z/codex_with_cc 调度子代理工作流集成或更新到当前项目。
 ```
-
-# 效果
-
-- 提示词
-
-```
-你现在委派三个子代理，让他们深度分析项目，给出项目中的优化计划书，对于三份计划书中矛盾的点，需要反复打回让他们再去验证再去制定，直到一致，然后你汇总出一份优化计划书。
-你作为leader，能力强，需要统筹好全局，你要对你的结果负责！
-```
-
-- 创建子代理
-
-![image-20260504101914934](https://raw.githubusercontent.com/xdd666t/MyData/master/pic/flutter/blog/20260504104419123.png)
-
-- 子代理执行Claude cli
-
-![image-20260504101840375](https://raw.githubusercontent.com/xdd666t/MyData/master/pic/flutter/blog/20260504104430267.png)
-
-- 结果打回，重新验证
-
-![image-20260504103024065](https://raw.githubusercontent.com/xdd666t/MyData/master/pic/flutter/blog/20260504104439475.png)
 
 # 使用姿势
 

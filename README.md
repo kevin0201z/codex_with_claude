@@ -16,9 +16,6 @@
 
 这一切都基于 DeepSeek 的离谱低价！在加上缓存命中价格百万token俩分钱！长任务、多代理、大范围代码探索，给我往死里造！反正苦力便宜，Token 成本四舍五入等于不要钱！
 
-**人民的 DeepSeek，小 D 的恩情还不完😭**
-
-<img src="https://raw.githubusercontent.com/xdd666t/MyData/master/pic/flutter/blog/20260504115715483.png" alt="ChatGPT Image 2026年5月4日 11_53_50" style="zoom: 50%;" />
 
 # 你需要先准备什么
 
@@ -35,7 +32,7 @@
 把下面这句扔给目标项目里的 Codex。
 
 ```text
-请把 https://github.com/xdd666t/codex_with_cc 调度子代理工作流集成或更新到当前项目。
+请把 https://github.com/kevin0201z/codex_with_cc 调度子代理工作流集成或更新到当前项目。
 ```
 
 # 效果

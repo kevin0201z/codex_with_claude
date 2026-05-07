@@ -10,7 +10,32 @@ else
     REPO_ROOT="$WORKFLOW_CONTAINER"
 fi
 
-ARTIFACT_ROOT="$REPO_ROOT/.codex/codex_with_cc/claude-delegate"
+TMP_RUNTIME=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --tmp-runtime)
+            TMP_RUNTIME=true
+            shift
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+if [[ "$TMP_RUNTIME" != "true" ]]; then
+    case "${CODEX_WITH_CC_TMP_RUNTIME:-}" in
+        1|true|TRUE) TMP_RUNTIME=true ;;
+    esac
+fi
+
+if [[ "$TMP_RUNTIME" == "true" ]]; then
+    REPO_NAME=$(basename "$REPO_ROOT" | sed 's/[^A-Za-z0-9_.-]/_/g')
+    ARTIFACT_ROOT="/tmp/codex_with_cc/$REPO_NAME/claude-delegate"
+else
+    ARTIFACT_ROOT="$REPO_ROOT/.codex/codex_with_cc/claude-delegate"
+fi
 TASKS_ROOT="$REPO_ROOT/.codex/codex_with_cc/tasks"
 
 TIMESTAMP=$(date +"%Y%m%d")
@@ -78,6 +103,11 @@ TASK_5=$(generate_task_file "reuse-cross-check-2" "PrimaryReuse" \
     "docs/codex_with_cc/unix_scripts/delegate_to_claude.sh;docs/codex_with_cc/unix_scripts/claude_delegate_backend_helpers.sh;docs/codex_with_cc/unix_scripts/claude_session_pool.sh;docs/codex_with_cc/unix_scripts/verify_delegate_artifacts.sh;docs/codex_with_cc/unix_scripts/verify_delegate_chain.sh;docs/codex_with_cc/unix_scripts/run_real_delegate_chain_validation.sh;docs/codex_with_cc/unix_scripts/test_delegate_runtime.sh;docs/codex_with_cc/unix_scripts/test_delegate_session_pool.sh;docs/codex_with_cc/CODEX_WITH_CC.md" \
     "bash docs/codex_with_cc/unix_scripts/verify_delegate_artifacts.sh -r <reuse-2-run-id> -a '$ARTIFACT_ROOT'")
 
+TMP_RUNTIME_FLAG=""
+if [[ "$TMP_RUNTIME" == "true" ]]; then
+    TMP_RUNTIME_FLAG=" --tmp-runtime"
+fi
+
 cat <<EOF
 Delegate Chain Validation Tasks Generated
 ===========================================
@@ -87,23 +117,23 @@ Tasks Directory: $TIME_DIR
 
 Task 1 (Anchor): $TASK_1
   Mode: PrimaryAnchor
-  Command: CODEX_CLAUDE_CHILD_THREAD=1 bash docs/codex_with_cc/unix_scripts/delegate_to_claude.sh -f $TASK_1 --session-mode PrimaryAnchor --session-key $SESSION_KEY --bypass-permissions
+  Command: CODEX_CLAUDE_CHILD_THREAD=1 bash docs/codex_with_cc/unix_scripts/delegate_to_claude.sh -f $TASK_1 --session-mode PrimaryAnchor --session-key $SESSION_KEY${TMP_RUNTIME_FLAG} --bypass-permissions
 
 Task 2 (Parallel 1): $TASK_2
   Mode: ParallelPool
-  Command: CODEX_CLAUDE_CHILD_THREAD=1 bash docs/codex_with_cc/unix_scripts/delegate_to_claude.sh -f $TASK_2 --session-mode ParallelPool --session-key $SESSION_KEY --bypass-permissions --allow-parallel
+  Command: CODEX_CLAUDE_CHILD_THREAD=1 bash docs/codex_with_cc/unix_scripts/delegate_to_claude.sh -f $TASK_2 --session-mode ParallelPool --session-key $SESSION_KEY${TMP_RUNTIME_FLAG} --bypass-permissions --allow-parallel
 
 Task 3 (Parallel 2): $TASK_3
   Mode: ParallelPool
-  Command: CODEX_CLAUDE_CHILD_THREAD=1 bash docs/codex_with_cc/unix_scripts/delegate_to_claude.sh -f $TASK_3 --session-mode ParallelPool --session-key $SESSION_KEY --bypass-permissions --allow-parallel
+  Command: CODEX_CLAUDE_CHILD_THREAD=1 bash docs/codex_with_cc/unix_scripts/delegate_to_claude.sh -f $TASK_3 --session-mode ParallelPool --session-key $SESSION_KEY${TMP_RUNTIME_FLAG} --bypass-permissions --allow-parallel
 
 Task 4 (Reuse 1): $TASK_4
   Mode: PrimaryReuse
-  Command: CODEX_CLAUDE_CHILD_THREAD=1 bash docs/codex_with_cc/unix_scripts/delegate_to_claude.sh -f $TASK_4 --session-mode PrimaryReuse --session-key $SESSION_KEY --bypass-permissions
+  Command: CODEX_CLAUDE_CHILD_THREAD=1 bash docs/codex_with_cc/unix_scripts/delegate_to_claude.sh -f $TASK_4 --session-mode PrimaryReuse --session-key $SESSION_KEY${TMP_RUNTIME_FLAG} --bypass-permissions
 
 Task 5 (Reuse 2): $TASK_5
   Mode: PrimaryReuse
-  Command: CODEX_CLAUDE_CHILD_THREAD=1 bash docs/codex_with_cc/unix_scripts/delegate_to_claude.sh -f $TASK_5 --session-mode PrimaryReuse --session-key $SESSION_KEY --bypass-permissions
+  Command: CODEX_CLAUDE_CHILD_THREAD=1 bash docs/codex_with_cc/unix_scripts/delegate_to_claude.sh -f $TASK_5 --session-mode PrimaryReuse --session-key $SESSION_KEY${TMP_RUNTIME_FLAG} --bypass-permissions
 
 Chain Verification Command:
   bash docs/codex_with_cc/unix_scripts/verify_delegate_chain.sh \\

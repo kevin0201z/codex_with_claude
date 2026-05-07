@@ -221,7 +221,19 @@ pwsh -NoProfile -File .\docs\codex_with_cc\windows_scripts\delegate_to_claude.ps
   -BypassPermissions
 ```
 
-Linux/macOS 模板中的子代理标准调用形态：
+Linux/macOS 模板中的子代理标准调用形态（推荐使用 `--tmp-runtime` 避免仓库权限问题）：
+
+```bash
+export CODEX_CLAUDE_CHILD_THREAD=1
+bash ./docs/codex_with_cc/unix_scripts/delegate_to_claude.sh \
+  -f ./.codex/codex_with_cc/tasks/<yyyyMMdd>/<HHmmssfff>-<short-id>-<task-file>.md \
+  --session-mode PrimaryReuse \
+  --session-key <stable-session-key> \
+  --tmp-runtime \
+  --bypass-permissions
+```
+
+如果不使用 `--tmp-runtime`，产物默认写在目标项目 `.codex/codex_with_cc/claude-delegate`：
 
 ```bash
 export CODEX_CLAUDE_CHILD_THREAD=1
@@ -269,6 +281,14 @@ bash ./docs/codex_with_cc/unix_scripts/delegate_to_claude.sh \
 - `trace_<RunId>.log`
 - `session-pools/<SessionKey>.json`
 
+Linux/macOS 下如果启用 `--tmp-runtime` 或 `CODEX_WITH_CC_TMP_RUNTIME=1`，委派运行产物会写在：
+
+```text
+/tmp/codex_with_cc/<repo-name>/claude-delegate
+```
+
+`.codex/codex_with_cc/tasks` 任务文件仍然在目标项目里，只有委派运行产物进入 `/tmp`。
+
 Windows 模板里，检查单次委派产物：
 
 ```powershell
@@ -302,5 +322,7 @@ bash ./docs/codex_with_cc/unix_scripts/verify_delegate_chain.sh
 - 跑了哪些验证命令及结果。
 - 当前平台是否完整支持。
 - 后续用户应该如何派活。
+
+如果使用了 tmp runtime，必须在汇报中明确真实 artifact root 路径（即 `/tmp/codex_with_cc/<repo>/claude-delegate`），而不是目标项目下的 `.codex/codex_with_cc/claude-delegate`。
 
 不要只说“已完成”。如果某项验证没有运行，说明原因。

@@ -29,6 +29,7 @@ LOCK_POLL_MILLISECONDS=500
 MAX_RETRY_COUNT=5
 BYPASS_PERMISSIONS=false
 DRY_RUN=false
+TMP_RUNTIME=false
 
 usage() {
     cat <<EOF
@@ -60,6 +61,7 @@ Options:
   --max-retry-count N       Maximum retry count (default: 5)
   --bypass-permissions      Skip permission checks
   --dry-run                 Dry run without invoking Claude
+  --tmp-runtime             Use /tmp/codex_with_cc/<repo>/claude-delegate as artifact root
   -h, --help                Show this help message
 EOF
 }
@@ -160,6 +162,10 @@ while [[ $# -gt 0 ]]; do
             DRY_RUN=true
             shift
             ;;
+        --tmp-runtime)
+            TMP_RUNTIME=true
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -171,6 +177,16 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+if [[ "$TMP_RUNTIME" != "true" ]]; then
+    case "${CODEX_WITH_CC_TMP_RUNTIME:-}" in
+        1|true|TRUE)
+            TMP_RUNTIME=true
+            ;;
+    esac
+fi
+
+ORIGINAL_ARTIFACT_ROOT_ARG="${ARTIFACT_ROOT:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKFLOW_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -195,6 +211,13 @@ get_default_delegate_artifact_root() {
         return
     fi
 
+    local repo_name
+    repo_name=$(basename "$repo_root" | sed 's/[^A-Za-z0-9_.-]/_/g')
+    printf '/tmp/codex_with_cc/%s/claude-delegate\n' "$repo_name"
+}
+
+get_tmp_delegate_artifact_root() {
+    local repo_root="$1"
     local repo_name
     repo_name=$(basename "$repo_root" | sed 's/[^A-Za-z0-9_.-]/_/g')
     printf '/tmp/codex_with_cc/%s/claude-delegate\n' "$repo_name"
@@ -226,10 +249,31 @@ fi
 source "$SESSION_POOL_HELPER_PATH"
 source "$BACKEND_HELPER_PATH"
 
-if [[ -z "$ARTIFACT_ROOT" ]]; then
-    ARTIFACT_ROOT="$(get_default_delegate_artifact_root "$REPO_ROOT")"
+ARTIFACT_ROOT_SOURCE=""
+
+if [[ -n "$ARTIFACT_ROOT" ]]; then
+    ARTIFACT_ROOT_SOURCE="explicit"
+elif [[ "$TMP_RUNTIME" == "true" ]]; then
+    ARTIFACT_ROOT="$(get_tmp_delegate_artifact_root "$REPO_ROOT")"
+    ARTIFACT_ROOT_SOURCE="tmp-runtime"
+else
+    preferred="$REPO_ROOT/.codex/codex_with_cc/claude-delegate"
+    writable=$(test_claude_delegate_path_writable "$preferred/.artifact_probe")
+    if [[ "$writable" == "true" ]]; then
+        ARTIFACT_ROOT="$preferred"
+        ARTIFACT_ROOT_SOURCE="repo-default"
+    else
+        ARTIFACT_ROOT="$(get_tmp_delegate_artifact_root "$REPO_ROOT")"
+        ARTIFACT_ROOT_SOURCE="auto-tmp-fallback"
+    fi
 fi
 RESOLVED_ARTIFACT_ROOT="$(resolve_delegate_path "$ARTIFACT_ROOT")"
+
+if [[ "$ARTIFACT_ROOT_SOURCE" = "tmp-runtime" || "$ARTIFACT_ROOT_SOURCE" = "auto-tmp-fallback" ]]; then
+    TMP_RUNTIME_EFFECTIVE=true
+else
+    TMP_RUNTIME_EFFECTIVE=false
+fi
 
 if [[ ! -f "$ENTRY_PATH" ]]; then
     echo "Missing workflow entry document: $ENTRY_PATH" >&2
@@ -346,8 +390,21 @@ bash $(shell_quote "$SCRIPT_DIR/delegate_to_claude.sh") \\
   -f $(shell_quote "$TASK_SNAPSHOT_PATH") \\
   --session-mode $(shell_quote "$SESSION_MODE") \\
   --session-key $(shell_quote "$EFFECTIVE_SESSION_KEY") \\
-  --artifact-root $(shell_quote "$RESOLVED_ARTIFACT_ROOT")$(if [[ "$ALLOW_PARALLEL" == "true" ]]; then printf ' \\\n  --allow-parallel'; fi)$(if [[ "$BYPASS_PERMISSIONS" == "true" ]]; then printf ' \\\n  --bypass-permissions'; fi)
 EOF
+    if [[ -n "${ORIGINAL_ARTIFACT_ROOT_ARG:-}" ]]; then
+        printf '  --artifact-root %s' "$(shell_quote "$RESOLVED_ARTIFACT_ROOT")" >> "$RERUN_SCRIPT_PATH"
+    elif [[ "$TMP_RUNTIME" == "true" ]]; then
+        printf '  --tmp-runtime' >> "$RERUN_SCRIPT_PATH"
+    else
+        printf '  --artifact-root %s' "$(shell_quote "$RESOLVED_ARTIFACT_ROOT")" >> "$RERUN_SCRIPT_PATH"
+    fi
+    if [[ "$ALLOW_PARALLEL" == "true" ]]; then
+        printf ' \\\n  --allow-parallel' >> "$RERUN_SCRIPT_PATH"
+    fi
+    if [[ "$BYPASS_PERMISSIONS" == "true" ]]; then
+        printf ' \\\n  --bypass-permissions' >> "$RERUN_SCRIPT_PATH"
+    fi
+    printf '\n' >> "$RERUN_SCRIPT_PATH"
     chmod +x "$RERUN_SCRIPT_PATH"
 }
 
@@ -457,6 +514,9 @@ write_delegate_json "$CONFIG_PATH" "$(cat <<EOF
   "attemptCount": 0,
   "retryCount": 0,
   "maxRetryCount": $MAX_RETRY_COUNT,
+  "tmpRuntimeRequested": $TMP_RUNTIME,
+  "tmpRuntimeEffective": $TMP_RUNTIME_EFFECTIVE,
+  "artifactRootSource": $(json_quote "$ARTIFACT_ROOT_SOURCE"),
   "updatedAt": $(json_quote "$NOW")
 }
 EOF
@@ -482,6 +542,9 @@ write_delegate_json "$STATUS_PATH" "$(cat <<EOF
   "retryCount": 0,
   "maxRetryCount": $MAX_RETRY_COUNT,
   "attempts": [],
+  "tmpRuntimeRequested": $TMP_RUNTIME,
+  "tmpRuntimeEffective": $TMP_RUNTIME_EFFECTIVE,
+  "artifactRootSource": $(json_quote "$ARTIFACT_ROOT_SOURCE"),
   "updatedAt": $(json_quote "$NOW")
 }
 EOF
@@ -557,6 +620,9 @@ Risks Or Follow-ups
       "capturedFinalResult": true
     }
   ],
+  "tmpRuntimeRequested": $TMP_RUNTIME,
+  "tmpRuntimeEffective": $TMP_RUNTIME_EFFECTIVE,
+  "artifactRootSource": $(json_quote "$ARTIFACT_ROOT_SOURCE"),
   "updatedAt": $(json_quote "$NOW")
 }
 EOF
@@ -596,6 +662,9 @@ EOF
   "maxRetryCount": $MAX_RETRY_COUNT,
   "failureDisposition": $(json_quote "NEED_HUMAN_INTERVENTION"),
   "failureSummary": $(json_quote "$failure_summary"),
+  "tmpRuntimeRequested": $TMP_RUNTIME,
+  "tmpRuntimeEffective": $TMP_RUNTIME_EFFECTIVE,
+  "artifactRootSource": $(json_quote "$ARTIFACT_ROOT_SOURCE"),
   "updatedAt": $(json_quote "$NOW")
 }
 EOF
@@ -717,6 +786,9 @@ write_delegate_json "$CONFIG_PATH" "$(cat <<EOF
   "attemptCount": 0,
   "retryCount": 0,
   "maxRetryCount": $MAX_RETRY_COUNT,
+  "tmpRuntimeRequested": $TMP_RUNTIME,
+  "tmpRuntimeEffective": $TMP_RUNTIME_EFFECTIVE,
+  "artifactRootSource": $(json_quote "$ARTIFACT_ROOT_SOURCE"),
   "updatedAt": $(json_quote "$NOW")
 }
 EOF
@@ -734,6 +806,12 @@ echo "Output: $RESOLVED_OUTPUT_PATH"
 echo "Status: $STATUS_PATH"
 echo "Trace: $TRACE_PATH"
 echo "Raw Stream: $RAW_STREAM_PATH"
+echo "Artifact Root Source: $ARTIFACT_ROOT_SOURCE"
+if [[ "$TMP_RUNTIME" == "true" ]]; then
+    echo "Tmp Runtime: requested"
+else
+    echo "Tmp Runtime: not requested"
+fi
 
 if [[ "$DRY_RUN" == "true" ]]; then
     echo "Dry run enabled; Claude Code was not invoked."
@@ -759,6 +837,9 @@ if [[ "$DRY_RUN" == "true" ]]; then
   "retryCount": 0,
   "maxRetryCount": $MAX_RETRY_COUNT,
   "attempts": [],
+  "tmpRuntimeRequested": $TMP_RUNTIME,
+  "tmpRuntimeEffective": $TMP_RUNTIME_EFFECTIVE,
+  "artifactRootSource": $(json_quote "$ARTIFACT_ROOT_SOURCE"),
   "updatedAt": $(json_quote "$NOW")
 }
 EOF
@@ -796,6 +877,9 @@ write_delegate_json "$STATUS_PATH" "$(cat <<EOF
   "retryCount": 0,
   "maxRetryCount": $MAX_RETRY_COUNT,
   "attempts": [],
+  "tmpRuntimeRequested": $TMP_RUNTIME,
+  "tmpRuntimeEffective": $TMP_RUNTIME_EFFECTIVE,
+  "artifactRootSource": $(json_quote "$ARTIFACT_ROOT_SOURCE"),
   "updatedAt": $(json_quote "$NOW")
 }
 EOF
@@ -1098,6 +1182,9 @@ write_delegate_json "$STATUS_PATH" "$(cat <<EOF
   "failureDisposition": $(json_quote_or_null "${FAILURE_DISPOSITION:-}"),
   "failureSummary": $(json_quote_or_null "${FAILURE_SUMMARY:-}"),
   "attempts": [],
+  "tmpRuntimeRequested": $TMP_RUNTIME,
+  "tmpRuntimeEffective": $TMP_RUNTIME_EFFECTIVE,
+  "artifactRootSource": $(json_quote "$ARTIFACT_ROOT_SOURCE"),
   "updatedAt": $(json_quote "$NOW")
 }
 EOF

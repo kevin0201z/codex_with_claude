@@ -86,6 +86,7 @@ if [[ ${#ALL_RUN_IDS[@]} -eq 0 ]]; then
 fi
 
 echo "Verifying ${#ALL_RUN_IDS[@]} delegate run(s)..."
+echo "Artifact Root: $ARTIFACT_ROOT"
 
 for RUN_ID in "${ALL_RUN_IDS[@]}"; do
     echo "Verifying run: $RUN_ID"

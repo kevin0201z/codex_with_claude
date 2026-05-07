@@ -424,3 +424,50 @@ echo "Status: $DELEGATE_STATUS"
 echo "Attempts: $STATUS_ATTEMPT_COUNT"
 echo "Retries: $STATUS_RETRY_COUNT"
 echo "Output: $OUTPUT_PATH"
+
+TMP_REQUESTED_STATUS=$(echo "$STATUS" | jq -r '.tmpRuntimeRequested // ""')
+TMP_REQUESTED_CONFIG=$(echo "$CONFIG" | jq -r '.tmpRuntimeRequested // ""')
+
+if [[ -n "$TMP_REQUESTED_STATUS" ]] && [[ -n "$TMP_REQUESTED_CONFIG" ]]; then
+    if [[ "$TMP_REQUESTED_STATUS" != "$TMP_REQUESTED_CONFIG" ]]; then
+        echo "tmpRuntimeRequested mismatch. status=$TMP_REQUESTED_STATUS config=$TMP_REQUESTED_CONFIG" >&2
+        exit 1
+    fi
+fi
+
+TMP_EFFECTIVE_STATUS=$(echo "$STATUS" | jq -r '.tmpRuntimeEffective // ""')
+TMP_EFFECTIVE_CONFIG=$(echo "$CONFIG" | jq -r '.tmpRuntimeEffective // ""')
+
+if [[ -n "$TMP_EFFECTIVE_STATUS" ]] && [[ -n "$TMP_EFFECTIVE_CONFIG" ]]; then
+    if [[ "$TMP_EFFECTIVE_STATUS" != "$TMP_EFFECTIVE_CONFIG" ]]; then
+        echo "tmpRuntimeEffective mismatch. status=$TMP_EFFECTIVE_STATUS config=$TMP_EFFECTIVE_CONFIG" >&2
+        exit 1
+    fi
+fi
+
+ARTIFACT_ROOT_SOURCE_STATUS=$(echo "$STATUS" | jq -r '.artifactRootSource // ""')
+ARTIFACT_ROOT_SOURCE_CONFIG=$(echo "$CONFIG" | jq -r '.artifactRootSource // ""')
+
+if [[ -n "$ARTIFACT_ROOT_SOURCE_STATUS" ]] || [[ -n "$ARTIFACT_ROOT_SOURCE_CONFIG" ]]; then
+    if [[ "$ARTIFACT_ROOT_SOURCE_STATUS" != "$ARTIFACT_ROOT_SOURCE_CONFIG" ]]; then
+        echo "artifactRootSource mismatch. status=$ARTIFACT_ROOT_SOURCE_STATUS config=$ARTIFACT_ROOT_SOURCE_CONFIG" >&2
+        exit 1
+    fi
+
+    VALID_SOURCES=("explicit" "tmp-runtime" "repo-default" "auto-tmp-fallback")
+    source_valid="false"
+    for src in "${VALID_SOURCES[@]}"; do
+        if [[ "$ARTIFACT_ROOT_SOURCE_STATUS" == "$src" ]]; then
+            source_valid="true"
+            break
+        fi
+    done
+    if [[ "$source_valid" != "true" ]]; then
+        echo "Unknown artifactRootSource: $ARTIFACT_ROOT_SOURCE_STATUS" >&2
+        exit 1
+    fi
+fi
+
+if [[ -n "$ARTIFACT_ROOT_SOURCE_STATUS" ]]; then
+    echo "Artifact Root Source: $ARTIFACT_ROOT_SOURCE_STATUS"
+fi

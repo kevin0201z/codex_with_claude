@@ -303,6 +303,100 @@ test_json_file_atomic_write() {
     fi
 }
 
+test_tmp_runtime_uses_tmp_artifact_root() {
+    local tmp_home
+    tmp_home=$(mktemp -d)
+
+    local result
+    result=$(HOME="$tmp_home" XDG_CONFIG_HOME="$tmp_home/.config" CODEX_CLAUDE_CHILD_THREAD=1 timeout 5 bash "$SCRIPT_DIR/delegate_to_claude.sh" \
+        -t "test task" \
+        --tmp-runtime \
+        --dry-run \
+        2>&1 || true)
+
+    rm -rf "$tmp_home"
+
+    if echo "$result" | grep -q "/tmp/codex_with_cc/"; then
+        echo "true"
+    else
+        echo "false"
+    fi
+}
+
+test_tmp_runtime_env_var_uses_tmp_artifact_root() {
+    local tmp_home
+    tmp_home=$(mktemp -d)
+
+    local result
+    result=$(CODEX_WITH_CC_TMP_RUNTIME=1 HOME="$tmp_home" XDG_CONFIG_HOME="$tmp_home/.config" CODEX_CLAUDE_CHILD_THREAD=1 timeout 5 bash "$SCRIPT_DIR/delegate_to_claude.sh" \
+        -t "test task" \
+        --dry-run \
+        2>&1 || true)
+
+    rm -rf "$tmp_home"
+
+    if echo "$result" | grep -q "/tmp/codex_with_cc/"; then
+        echo "true"
+    else
+        echo "false"
+    fi
+}
+
+test_explicit_artifact_root_overrides_tmp_runtime() {
+    local tmp_root
+    tmp_root=$(mktemp -d)
+    local tmp_home
+    tmp_home=$(mktemp -d)
+
+    local result
+    result=$(HOME="$tmp_home" XDG_CONFIG_HOME="$tmp_home/.config" CODEX_CLAUDE_CHILD_THREAD=1 timeout 5 bash "$SCRIPT_DIR/delegate_to_claude.sh" \
+        -t "test task" \
+        --tmp-runtime \
+        --artifact-root "$tmp_root" \
+        --dry-run \
+        2>&1 || true)
+
+    rm -rf "$tmp_root" "$tmp_home"
+
+    if echo "$result" | grep -q "Artifact Root Source: explicit"; then
+        echo "true"
+    else
+        echo "false"
+    fi
+}
+
+test_rerun_script_preserves_tmp_runtime() {
+    local home_parent
+    home_parent=$(mktemp -d)
+    local readonly_home="$home_parent/readonly-home"
+    mkdir -p "$readonly_home"
+    chmod 555 "$readonly_home"
+
+    local result
+    result=$(HOME="$readonly_home" CODEX_CLAUDE_CHILD_THREAD=1 bash "$SCRIPT_DIR/delegate_to_claude.sh" \
+        -t "test task" \
+        --tmp-runtime \
+        2>&1 || true)
+
+    local rerun_base="/tmp/codex_with_cc"
+    local rerun_script
+    rerun_script=$(find "$rerun_base" -maxdepth 3 -name 'rerun_*.sh' -mmin -1 2>/dev/null | head -n 1)
+
+    local rerun_content=""
+    if [[ -n "$rerun_script" ]]; then
+        rerun_content=$(cat "$rerun_script" 2>/dev/null || echo "")
+    fi
+
+    chmod 755 "$readonly_home"
+    rm -rf "$home_parent"
+
+    if echo "$rerun_content" | grep -q -- "--tmp-runtime"; then
+        echo "true"
+    else
+        echo "false"
+    fi
+}
+
 echo "========================================"
 echo "Running delegate runtime tests"
 echo "========================================"
@@ -321,6 +415,10 @@ run_test "output_resolution_normalization" test_output_resolution_normalization
 run_test "process_alive_check" test_process_alive_check
 run_test "path_writable_check" test_path_writable_check
 run_test "json_file_atomic_write" test_json_file_atomic_write
+run_test "tmp_runtime_uses_tmp_artifact_root" test_tmp_runtime_uses_tmp_artifact_root
+run_test "tmp_runtime_env_var_uses_tmp_artifact_root" test_tmp_runtime_env_var_uses_tmp_artifact_root
+run_test "explicit_artifact_root_overrides_tmp_runtime" test_explicit_artifact_root_overrides_tmp_runtime
+run_test "rerun_script_preserves_tmp_runtime" test_rerun_script_preserves_tmp_runtime
 
 echo ""
 echo "========================================"

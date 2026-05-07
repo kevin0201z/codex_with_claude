@@ -86,6 +86,8 @@
 
 每次运行还会落审计产物：`config_<RunId>.json`、`status_<RunId>.json`、`prompt_<RunId>.md`、`stream_<RunId>.jsonl`、`trace_<RunId>.log`、`claude_<RunId>.md`。也就是说，任务怎么发出去的、用了哪个 session、有没有 resume、输出是什么、链路有没有断，都能查。不是“AI 说它干了”，而是有 artifacts 能验尸。
 
+Linux/macOS 还可以直接启用 `/tmp` runtime（`--tmp-runtime` 或 `CODEX_WITH_CC_TMP_RUNTIME=1`），避免仓库权限导致委派脚本先失败再回退的体验。详见 [codex_with_cc/CODEX_WITH_CC.md](codex_with_cc/CODEX_WITH_CC.md)。
+
 最后还有验证脚本兜底：运行时验证、session pool 验证、artifact 验证、delegate chain 验证都配好了。多子代理并行不是凭感觉开派对，而是有 session state、RunId、SessionKey、artifact root 和链路校验把它们串起来。逼格说法叫：可审计、可复用、可并发、可回放的多代理委派协议。、
 
 人话说法叫：让 Codex 当老板的时候，至少给它配了办公室制度和打卡机。

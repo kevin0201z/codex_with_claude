@@ -99,6 +99,11 @@ delegate_text="$(cat "$workflow_root/unix_scripts/delegate_to_claude.sh")"
 assert_contains "delegate-uses-central-workflow-entry" "$delegate_text" 'docs/codex_with_cc/CODEX_WITH_CC.md'
 assert_contains "delegate-prompt-uses-central-script-path" "$delegate_text" 'docs/codex_with_cc/unix_scripts/delegate_to_claude.sh'
 
+codex_with_cc_text="$(cat "$workflow_root/CODEX_WITH_CC.md")"
+assert_contains "codex-with-cc-md-contains-tmp-runtime" "$codex_with_cc_text" '--tmp-runtime'
+
+assert_contains "delegate-script-contains-tmp-runtime" "$delegate_text" '--tmp-runtime'
+
 printf 'stale\n' >"$workflow_root/obsolete.txt"
 printf 'stale host rules\n' >"$workflow_root/HOST_PROJECT_RULES.md"
 printf 'stale project memory\n' >"$workflow_root/PROJECT_MEMORY.md"

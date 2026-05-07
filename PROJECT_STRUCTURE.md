@@ -57,6 +57,7 @@ docs/
 - 安装后的工作流目录是 `docs/codex_with_cc/`
 - 运行产物和任务文件在 `.codex/codex_with_cc/`
 - 目标项目里**不会**有源仓库里的 `scripts/install_codex_with_cc.ps1` 这类安装器副本
+- Linux/macOS 下如果使用 `--tmp-runtime`，委派运行产物会放在 `/tmp/codex_with_cc/<repo-name>/claude-delegate`，该路径不在安装目录内，也不进入版本库。
 
 ## 路径映射表
 

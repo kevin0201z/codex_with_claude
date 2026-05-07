@@ -43,6 +43,12 @@ Do not replace this with the default Codex subagent flow, a direct `claude` comm
 
 When the delegated runner detects that the local Claude state directory is not writable, the Unix workflow may emit a repo- or `/tmp`-scoped rerun script such as `rerun_<RunId>.sh` under the delegate artifact root. That script is the preferred trusted-local-terminal handoff because it preserves the same task file, session mode, session key, artifact root, and permission flags.
 
+### Linux/macOS Tmp Runtime
+
+On Linux/macOS, the `--tmp-runtime` flag (or `CODEX_WITH_CC_TMP_RUNTIME=1`) explicitly uses `/tmp/codex_with_cc/<repo-name>/claude-delegate` as the artifact root from the first invocation, avoiding the need to hit a permission error before falling back to `/tmp`.
+
+This flag only affects the artifact root; task files remain under `.codex/codex_with_cc/tasks/` in the target project. The `--tmp-runtime` flag has no effect when an explicit `--artifact-root` is provided.
+
 ## Delegation Failure Contract
 When the delegate script fails, the Codex main thread must observe the following failure contract:
 
@@ -82,7 +88,17 @@ Risks Or Follow-ups
 Verification must list the commands actually run and their outcomes. If verification is blocked, the report must explain the blocker and whether it is unrelated to the delegated change.
 
 ## Artifacts
-Delegation artifacts are written under `.codex/codex_with_cc/claude-delegate` by default:
+
+Delegation artifacts are written to an artifact root determined by priority:
+
+1. Explicit `--artifact-root`
+2. `--tmp-runtime` or `CODEX_WITH_CC_TMP_RUNTIME=1` → `/tmp/codex_with_cc/<repo>/claude-delegate`
+3. Repo-local default `.codex/codex_with_cc/claude-delegate` (when writable)
+4. Automatic `/tmp` fallback when repo-local is not writable
+
+The artifact root source is recorded in `config_<RunId>.json` and `status_<RunId>.json` as `artifactRootSource` (values: `explicit`, `tmp-runtime`, `repo-default`, `auto-tmp-fallback`).
+
+Standard artifact files:
 - `claude_<RunId>.md`
 - `status_<RunId>.json`
 - `config_<RunId>.json`
@@ -115,6 +131,20 @@ pwsh -NoProfile -File .\docs\codex_with_cc\windows_scripts\delegate_to_claude.ps
 
 ## Standard Worker Command (Linux/macOS)
 
+Recommended form with explicit tmp runtime (avoids repo permission issues):
+
+```bash
+export CODEX_CLAUDE_CHILD_THREAD=1
+bash docs/codex_with_cc/unix_scripts/delegate_to_claude.sh \
+  -f .codex/codex_with_cc/tasks/<yyyyMMdd>/<HHmmssfff>-<short-id>-<task-file>.md \
+  --session-mode PrimaryReuse \
+  --session-key <stable-session-key> \
+  --tmp-runtime \
+  --bypass-permissions
+```
+
+Without tmp runtime (uses repo-local artifact root by default):
+
 ```bash
 export CODEX_CLAUDE_CHILD_THREAD=1
 bash docs/codex_with_cc/unix_scripts/delegate_to_claude.sh \
@@ -142,6 +172,13 @@ pwsh -NoProfile -File .\docs\codex_with_cc\windows_scripts\test_delegate_session
 ```bash
 bash docs/codex_with_cc/unix_scripts/test_delegate_runtime.sh
 bash docs/codex_with_cc/unix_scripts/test_delegate_session_pool.sh
+```
+
+With tmp runtime artifact root:
+
+```bash
+bash docs/codex_with_cc/unix_scripts/verify_delegate_artifacts.sh -r <run-id> -a /tmp/codex_with_cc/<repo>/claude-delegate
+bash docs/codex_with_cc/unix_scripts/verify_delegate_chain.sh --anchor-run-id <id> --parallel-run-ids "<ids>" --reuse-run-ids "<ids>" -a /tmp/codex_with_cc/<repo>/claude-delegate --session-key <key>
 ```
 
 Generate a real chain validation scaffold with:

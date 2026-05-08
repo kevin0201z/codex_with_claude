@@ -36,6 +36,7 @@ Use source-repo paths when changing this repository. Use target-project paths wh
 10. If the Codex sandbox or delegated runner cannot execute the same worker command, run that exact command in a trusted local terminal instead.
 11. Claude workers must read and follow all applicable Codex project skills under `.codex` before implementing or changing behavior.
 12. If the delegate script exits with a non-zero code, pre-launch validation fails, or the Claude Code CLI invocation cannot proceed, the Codex main thread must report the failure reason and the resolved delegate artifacts (status, config, trace). The Codex main thread must NOT fall back to the default Codex subagent flow, a direct `claude` invocation, or any workaround that bypasses the delegate script.
+13. If the delegated run is blocked because continuing would send repository content or task context to an external Claude service and the platform requires explicit user authorization, the Codex main thread must stop and ask the user for that authorization. The main thread must not grant that authorization on the user's behalf, must not silently take over the task locally, and must not switch to a different execution path unless the user explicitly instructs it to do so.
 
 ## Trusted Local Terminal Fallback
 This fallback is an execution-location fallback only. Preserve the same `CODEX_CLAUDE_CHILD_THREAD=1` marker, task file, session mode, session key, artifact root, and permission flags that the child thread would have used.
@@ -59,6 +60,7 @@ When the delegate script fails, the Codex main thread must observe the following
 4. Report the failure reason, the resolved artifacts, and any actionable next steps to the user.
 5. Do NOT retry the task using the default Codex subagent, a direct `claude` command, or any workflow that skips the delegate script.
 6. Do NOT silently absorb the failure and proceed as if the task was handled by another mechanism.
+7. If recovery requires explicit user authorization for external Claude execution, the main thread must request that authorization from the user and wait. Until the user explicitly approves, the task remains blocked; the main thread must not personally continue the implementation as a substitute for the delegated run.
 
 The only valid recovery path is to fix the root cause (missing `claude` CLI, missing dependencies, invalid task file, etc.) and re-invoke the delegate script with the same contract.
 

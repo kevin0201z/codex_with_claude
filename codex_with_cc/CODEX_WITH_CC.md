@@ -67,6 +67,39 @@ The only valid recovery path is to fix the root cause (missing `claude` CLI, mis
 - Codex child thread: provide a visible conversation-tree node and invoke the worker script.
 - Claude Code CLI: execute the delegated task, run verification, and produce a structured report.
 
+## Supervisor Child Thread Contract
+
+By default, a Codex child thread used for delegation should behave as a **supervisor**, not merely a launcher.
+
+Supervisor responsibilities:
+
+1. Start the delegate run using the approved workflow.
+2. Keep waiting until the delegate `status_<RunId>.json` reaches a terminal status (`completed` or `failed`).
+3. Read the final delegate artifacts before returning to the main thread:
+   - `status_<RunId>.json`
+   - `config_<RunId>.json`
+   - `trace_<RunId>.log`
+   - `claude_<RunId>.md`
+4. Return a final-result summary to the main thread, not only a `RunId` or startup status.
+
+A child thread must **not** end immediately after reporting:
+
+- preflight succeeded
+- delegate started
+- run id acquired
+- artifact root resolved
+
+Those are intermediate states, not task completion.
+
+The only times a supervisor child thread may return an intermediate status instead of a final summary are:
+
+1. the run timed out,
+2. the run failed and the failure artifacts were collected,
+3. the run was explicitly interrupted by the user,
+4. the parent explicitly requested launcher-only behavior.
+
+If a parent prompt truly wants launcher-only behavior, that must be stated explicitly. Otherwise, the default expectation is supervisor behavior.
+
 ## Session Modes
 - `PrimaryReuse`: default serial mode. Reuses the main Claude session for continuity.
 - `PrimaryAnchor`: semantic marker for the anchor task in a parallel batch. Behaviorally identical to `PrimaryReuse` (reuses the main session), but signals that this run's result becomes the reusable context for subsequent serial work in the same session.
@@ -83,6 +116,26 @@ Linux/macOS delegate runs support these permission profiles:
 - `bypass`: high-trust mode. Equivalent to the legacy bypass path and should only be used when the user explicitly approves it.
 
 Use `--preflight` to validate child-thread marker, required tools, task file, artifact root, Claude state writability, and permission profile without invoking Claude Code.
+
+## Recommended Delegation Gradient
+
+If the task boundary is not yet extremely clear, prefer this gradient instead of jumping straight to `accept-edits`:
+
+1. run `--preflight`
+2. run a `readonly` audit or investigation
+3. let the audit produce a minimum implementation checklist
+4. narrow the task file to explicit read/write boundaries
+5. rerun with `accept-edits`
+6. use `PrimaryReuse` by default, and only move to `PrimaryAnchor` / `ParallelPool` when task scopes are clearly independent
+
+Task files should ideally spell out:
+
+- allowed read scope
+- allowed write scope
+- forbidden paths
+- minimum verification command
+
+This makes policy behavior more predictable and reduces the chance of the first implementation delegate being blocked by an overly broad task description.
 
 ## Worker Output
 Claude Code must finish with these exact headings:
@@ -126,6 +179,8 @@ Use `verify_delegate_artifacts.ps1` (Windows) or `verify_delegate_artifacts.sh` 
 
 - Windows: `docs/codex_with_cc/windows_scripts/delegate_to_claude.ps1`
 - Linux/macOS: `docs/codex_with_cc/unix_scripts/delegate_to_claude.sh`
+- Linux/macOS: `docs/codex_with_cc/unix_scripts/run_delegate_supervised.sh`
+- Linux/macOS: `docs/codex_with_cc/unix_scripts/wait_for_delegate_run.sh`
 
 ## Standard Worker Command (Windows)
 
@@ -191,6 +246,31 @@ bash docs/codex_with_cc/unix_scripts/delegate_to_claude.sh \
 ```
 
 Use `PrimaryAnchor --allow-parallel` for the main branch of a parallel batch and `ParallelPool --allow-parallel` for independent side work.
+
+## Supervised Delegate Commands
+
+Use these when you want the child thread to keep waiting for the final result and print a final summary after the delegate run finishes.
+
+### Linux/macOS
+
+```bash
+export CODEX_CLAUDE_CHILD_THREAD=1
+bash codex_with_cc/unix_scripts/run_delegate_supervised.sh \
+  -f .codex/codex_with_cc/tasks/<yyyyMMdd>/<HHmmssfff>-<short-id>-<task-file>.md \
+  --session-mode PrimaryReuse \
+  --session-key <stable-session-key> \
+  --permission-profile readonly \
+  --tmp-runtime
+```
+
+Wait on an existing run:
+
+```bash
+bash codex_with_cc/unix_scripts/wait_for_delegate_run.sh \
+  -r <run-id> \
+  -a /tmp/codex_with_cc/<repo>/claude-delegate
+```
+
 
 ## Verification
 

@@ -194,6 +194,56 @@ test_stream_json_tool_result_false_positive_exclusion() {
     fi
 }
 
+test_permission_profile_readonly_cli_args() {
+    local args
+    args=$(new_claude_delegate_cli_args "sonnet" "session-name" "123e4567-e89b-12d3-a456-426614174000" "false" "" "readonly" "false")
+
+    if echo "$args" | grep -q '^default$' && ! echo "$args" | grep -q -- '--dangerously-skip-permissions'; then
+        echo "true"
+    else
+        echo "false"
+    fi
+}
+
+test_permission_profile_bypass_cli_args() {
+    local args
+    args=$(new_claude_delegate_cli_args "sonnet" "session-name" "123e4567-e89b-12d3-a456-426614174000" "false" "" "bypass" "true")
+
+    if echo "$args" | grep -q '^acceptEdits$' && echo "$args" | grep -q -- '--dangerously-skip-permissions'; then
+        echo "true"
+    else
+        echo "false"
+    fi
+}
+
+test_preflight_checks_pass_without_invoking_claude() {
+    local tmp_root
+    tmp_root=$(mktemp -d)
+    local tmp_home
+    tmp_home=$(mktemp -d)
+
+    local result
+    result=$(HOME="$tmp_home" XDG_CONFIG_HOME="$tmp_home/.config" CODEX_CLAUDE_CHILD_THREAD=1 bash "$SCRIPT_DIR/delegate_to_claude.sh" \
+        -t "preflight task" \
+        --artifact-root "$tmp_root" \
+        --permission-profile readonly \
+        --preflight \
+        2>&1)
+
+    local artifact_count
+    artifact_count=$(find "$tmp_root" -maxdepth 1 -type f | wc -l)
+
+    rm -rf "$tmp_root" "$tmp_home"
+
+    if echo "$result" | grep -q "Preflight checks passed." && \
+       echo "$result" | grep -q "Permission Profile: readonly" && \
+       [[ "$artifact_count" == "0" ]]; then
+        echo "true"
+    else
+        echo "false"
+    fi
+}
+
 test_successful_delegate_with_tool_result_error_text_releases_lease() {
     local fake_bin
     fake_bin=$(mktemp -d)
@@ -519,6 +569,9 @@ run_test "stale_session_retry_detection" test_stale_session_retry_detection
 run_test "stream_json_startup_error_retry" test_stream_json_startup_error_retry
 run_test "tool_result_false_positive_exclusion" test_tool_result_false_positive_exclusion
 run_test "stream_json_tool_result_false_positive_exclusion" test_stream_json_tool_result_false_positive_exclusion
+run_test "permission_profile_readonly_cli_args" test_permission_profile_readonly_cli_args
+run_test "permission_profile_bypass_cli_args" test_permission_profile_bypass_cli_args
+run_test "preflight_checks_pass_without_invoking_claude" test_preflight_checks_pass_without_invoking_claude
 run_test "final_result_heading_detection" test_final_result_heading_detection
 run_test "output_resolution_success" test_output_resolution_success
 run_test "output_resolution_normalization" test_output_resolution_normalization

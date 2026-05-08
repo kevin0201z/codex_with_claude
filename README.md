@@ -88,6 +88,8 @@
 
 Linux/macOS 还可以直接启用 `/tmp` runtime（`--tmp-runtime` 或 `CODEX_WITH_CC_TMP_RUNTIME=1`），避免仓库权限导致委派脚本先失败再回退的体验。详见 [codex_with_cc/CODEX_WITH_CC.md](codex_with_cc/CODEX_WITH_CC.md)。
 
+现在 Linux/macOS 还支持权限档位：`readonly` 适合审查、调查和 smoke test，`accept-edits` 适合普通实现任务，`bypass` 只给明确批准的高信任场景。默认推荐先不用 bypass，先用正常权限流跑通；需要先查环境是否能跑，也可以先执行 `--preflight` 做只校验不出网的预检查。
+
 最后还有验证脚本兜底：运行时验证、session pool 验证、artifact 验证、delegate chain 验证都配好了。多子代理并行不是凭感觉开派对，而是有 session state、RunId、SessionKey、artifact root 和链路校验把它们串起来。逼格说法叫：可审计、可复用、可并发、可回放的多代理委派协议。、
 
 人话说法叫：让 Codex 当老板的时候，至少给它配了办公室制度和打卡机。

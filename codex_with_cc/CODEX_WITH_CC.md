@@ -31,10 +31,11 @@ Use source-repo paths when changing this repository. Use target-project paths wh
 5. The child thread should use `model: gpt-5.3-codex`, `reasoning_effort: medium`, and `fork_context: false`.
 6. The delegate script must not pass `--effort`; Claude Code should use its configured default effort.
 7. Medium and large tasks should be written to a dated, uniquely named task file under `.codex/codex_with_cc/tasks/<yyyyMMdd>/<HHmmssfff>-<short-id>-<task-name>.md` and passed with `-TaskFile` (Windows) or `-f` (Linux/macOS).
-8. Claude workers must keep changes inside the delegated scope, run the required verification, and finish with the exact report headings defined in this document.
-9. If the Codex sandbox or delegated runner cannot execute the same worker command, run that exact command in a trusted local terminal instead.
-10. Claude workers must read and follow all applicable Codex project skills under `.codex` before implementing or changing behavior.
-11. If the delegate script exits with a non-zero code, pre-launch validation fails, or the Claude Code CLI invocation cannot proceed, the Codex main thread must report the failure reason and the resolved delegate artifacts (status, config, trace). The Codex main thread must NOT fall back to the default Codex subagent flow, a direct `claude` invocation, or any workaround that bypasses the delegate script.
+8. Linux/macOS delegate runs should prefer `--permission-profile readonly` for audits and smoke tests, `--permission-profile accept-edits` for normal implementation, and `--permission-profile bypass` only when the user explicitly approves high-trust execution.
+9. Claude workers must keep changes inside the delegated scope, run the required verification, and finish with the exact report headings defined in this document.
+10. If the Codex sandbox or delegated runner cannot execute the same worker command, run that exact command in a trusted local terminal instead.
+11. Claude workers must read and follow all applicable Codex project skills under `.codex` before implementing or changing behavior.
+12. If the delegate script exits with a non-zero code, pre-launch validation fails, or the Claude Code CLI invocation cannot proceed, the Codex main thread must report the failure reason and the resolved delegate artifacts (status, config, trace). The Codex main thread must NOT fall back to the default Codex subagent flow, a direct `claude` invocation, or any workaround that bypasses the delegate script.
 
 ## Trusted Local Terminal Fallback
 This fallback is an execution-location fallback only. Preserve the same `CODEX_CLAUDE_CHILD_THREAD=1` marker, task file, session mode, session key, artifact root, and permission flags that the child thread would have used.
@@ -72,6 +73,16 @@ The only valid recovery path is to fix the root cause (missing `claude` CLI, mis
 - `ParallelPool`: independent parallel side work. Uses reusable pool sessions without writing to the main session.
 
 Only use `-AllowParallel` when task scopes are independent.
+
+## Permission Profiles
+
+Linux/macOS delegate runs support these permission profiles:
+
+- `readonly`: safest default for smoke tests, audits, reviews, and investigations. Uses Claude's normal permission flow without edit auto-accept.
+- `accept-edits`: standard implementation mode. Lets Claude accept edits normally without bypassing permission checks.
+- `bypass`: high-trust mode. Equivalent to the legacy bypass path and should only be used when the user explicitly approves it.
+
+Use `--preflight` to validate child-thread marker, required tools, task file, artifact root, Claude state writability, and permission profile without invoking Claude Code.
 
 ## Worker Output
 Claude Code must finish with these exact headings:
@@ -131,7 +142,7 @@ pwsh -NoProfile -File .\docs\codex_with_cc\windows_scripts\delegate_to_claude.ps
 
 ## Standard Worker Command (Linux/macOS)
 
-Recommended form with explicit tmp runtime (avoids repo permission issues):
+Safe smoke test form with explicit tmp runtime:
 
 ```bash
 export CODEX_CLAUDE_CHILD_THREAD=1
@@ -139,19 +150,44 @@ bash docs/codex_with_cc/unix_scripts/delegate_to_claude.sh \
   -f .codex/codex_with_cc/tasks/<yyyyMMdd>/<HHmmssfff>-<short-id>-<task-file>.md \
   --session-mode PrimaryReuse \
   --session-key <stable-session-key> \
+  --permission-profile readonly \
+  --tmp-runtime
+```
+
+Normal implementation form without bypass:
+
+```bash
+export CODEX_CLAUDE_CHILD_THREAD=1
+bash docs/codex_with_cc/unix_scripts/delegate_to_claude.sh \
+  -f .codex/codex_with_cc/tasks/<yyyyMMdd>/<HHmmssfff>-<short-id>-<task-file>.md \
+  --session-mode PrimaryReuse \
+  --session-key <stable-session-key> \
+  --permission-profile accept-edits \
+  --tmp-runtime
+```
+
+High-trust implementation form with explicit approval:
+
+```bash
+export CODEX_CLAUDE_CHILD_THREAD=1
+bash docs/codex_with_cc/unix_scripts/delegate_to_claude.sh \
+  -f .codex/codex_with_cc/tasks/<yyyyMMdd>/<HHmmssfff>-<short-id>-<task-file>.md \
+  --session-mode PrimaryReuse \
+  --session-key <stable-session-key> \
+  --permission-profile bypass \
   --tmp-runtime \
   --bypass-permissions
 ```
 
-Without tmp runtime (uses repo-local artifact root by default):
+Preflight-only validation:
 
 ```bash
 export CODEX_CLAUDE_CHILD_THREAD=1
 bash docs/codex_with_cc/unix_scripts/delegate_to_claude.sh \
   -f .codex/codex_with_cc/tasks/<yyyyMMdd>/<HHmmssfff>-<short-id>-<task-file>.md \
-  --session-mode PrimaryReuse \
-  --session-key <stable-session-key> \
-  --bypass-permissions
+  --permission-profile readonly \
+  --tmp-runtime \
+  --preflight
 ```
 
 Use `PrimaryAnchor --allow-parallel` for the main branch of a parallel batch and `ParallelPool --allow-parallel` for independent side work.

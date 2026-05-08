@@ -101,8 +101,13 @@ assert_contains "delegate-prompt-uses-central-script-path" "$delegate_text" 'doc
 
 codex_with_cc_text="$(cat "$workflow_root/CODEX_WITH_CC.md")"
 assert_contains "codex-with-cc-md-contains-tmp-runtime" "$codex_with_cc_text" '--tmp-runtime'
+assert_contains "codex-with-cc-md-contains-readonly-profile" "$codex_with_cc_text" '--permission-profile readonly'
+assert_contains "codex-with-cc-md-contains-accept-edits-profile" "$codex_with_cc_text" '--permission-profile accept-edits'
+assert_contains "codex-with-cc-md-contains-preflight" "$codex_with_cc_text" '--preflight'
 
 assert_contains "delegate-script-contains-tmp-runtime" "$delegate_text" '--tmp-runtime'
+assert_contains "delegate-script-contains-permission-profile-option" "$delegate_text" '--permission-profile'
+assert_contains "delegate-script-contains-preflight-option" "$delegate_text" '--preflight'
 
 printf 'stale\n' >"$workflow_root/obsolete.txt"
 printf 'stale host rules\n' >"$workflow_root/HOST_PROJECT_RULES.md"

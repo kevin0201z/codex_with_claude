@@ -449,7 +449,22 @@ new_claude_delegate_cli_args() {
     local session_id="$3"
     local resume="$4"
     local max_budget_usd="$5"
-    local bypass_permissions="$6"
+    local permission_profile="$6"
+    local bypass_permissions="$7"
+
+    local permission_mode="acceptEdits"
+    case "$permission_profile" in
+        readonly)
+            permission_mode="default"
+            ;;
+        accept-edits|bypass)
+            permission_mode="acceptEdits"
+            ;;
+        *)
+            echo "Unsupported Claude permission profile: $permission_profile" >&2
+            return 1
+            ;;
+    esac
 
     printf '%s\n' '--verbose'
     printf '%s\n' '--print'
@@ -460,7 +475,7 @@ new_claude_delegate_cli_args() {
     printf '%s\n' '--name'
     printf '%s\n' "$session_name"
     printf '%s\n' '--permission-mode'
-    printf '%s\n' 'acceptEdits'
+    printf '%s\n' "$permission_mode"
 
     if [[ "$resume" == "true" ]]; then
         printf '%s\n' '--resume'

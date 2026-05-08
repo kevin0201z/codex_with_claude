@@ -27,9 +27,11 @@ RESET_PARALLEL_POOL=false
 LOCK_TIMEOUT_SECONDS=120
 LOCK_POLL_MILLISECONDS=500
 MAX_RETRY_COUNT=5
+PERMISSION_PROFILE="accept-edits"
 BYPASS_PERMISSIONS=false
 DRY_RUN=false
 TMP_RUNTIME=false
+PREFLIGHT=false
 
 usage() {
     cat <<EOF
@@ -59,7 +61,9 @@ Options:
   --lock-timeout SECONDS    Lock timeout (default: 120)
   --lock-poll MS            Lock poll interval in ms (default: 500)
   --max-retry-count N       Maximum retry count (default: 5)
+  --permission-profile NAME Delegate permission profile: readonly, accept-edits, bypass
   --bypass-permissions      Skip permission checks
+  --preflight               Validate delegate prerequisites without invoking Claude
   --dry-run                 Dry run without invoking Claude
   --tmp-runtime             Use /tmp/codex_with_cc/<repo>/claude-delegate as artifact root
   -h, --help                Show this help message
@@ -154,8 +158,16 @@ while [[ $# -gt 0 ]]; do
             MAX_RETRY_COUNT="$2"
             shift 2
             ;;
+        --permission-profile)
+            PERMISSION_PROFILE="$2"
+            shift 2
+            ;;
         --bypass-permissions)
             BYPASS_PERMISSIONS=true
+            shift
+            ;;
+        --preflight)
+            PREFLIGHT=true
             shift
             ;;
         --dry-run)
@@ -177,6 +189,19 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+case "$PERMISSION_PROFILE" in
+    readonly|accept-edits|bypass)
+        ;;
+    *)
+        echo "Unsupported permission profile: $PERMISSION_PROFILE. Use readonly, accept-edits, or bypass." >&2
+        exit 1
+        ;;
+esac
+
+if [[ "$PERMISSION_PROFILE" == "bypass" ]]; then
+    BYPASS_PERMISSIONS=true
+fi
 
 if [[ "$TMP_RUNTIME" != "true" ]]; then
     case "${CODEX_WITH_CC_TMP_RUNTIME:-}" in
@@ -390,6 +415,7 @@ bash $(shell_quote "$SCRIPT_DIR/delegate_to_claude.sh") \\
   -f $(shell_quote "$TASK_SNAPSHOT_PATH") \\
   --session-mode $(shell_quote "$SESSION_MODE") \\
   --session-key $(shell_quote "$EFFECTIVE_SESSION_KEY") \\
+  --permission-profile $(shell_quote "$PERMISSION_PROFILE") \\
 EOF
     if [[ -n "${ORIGINAL_ARTIFACT_ROOT_ARG:-}" ]]; then
         printf '  --artifact-root %s' "$(shell_quote "$RESOLVED_ARTIFACT_ROOT")" >> "$RERUN_SCRIPT_PATH"
@@ -481,6 +507,28 @@ Hard requirements:
   Final Result
   Risks Or Follow-ups"
 
+PREFLIGHT_CLAUDE_STATE_WRITABLE="true"
+if [[ -z "${HOME:-}" ]]; then
+    PREFLIGHT_CLAUDE_STATE_WRITABLE="false"
+elif [[ "$(test_claude_delegate_path_writable "${HOME:-}/.claude/.delegate_probe")" != "true" ]]; then
+    PREFLIGHT_CLAUDE_STATE_WRITABLE="false"
+fi
+
+if [[ "$PREFLIGHT" == "true" ]]; then
+    if [[ "$PREFLIGHT_CLAUDE_STATE_WRITABLE" != "true" ]]; then
+        echo "Preflight failed: Claude state directory is not writable: ${HOME:-}/.claude" >&2
+        exit 1
+    fi
+    echo "Preflight checks passed."
+    echo "Permission Profile: $PERMISSION_PROFILE"
+    echo "Bypass Permissions: $BYPASS_PERMISSIONS"
+    echo "Artifact Root: $RESOLVED_ARTIFACT_ROOT"
+    echo "Artifact Root Source: $ARTIFACT_ROOT_SOURCE"
+    echo "Task Source: $([ -n "${TASK_FILE:-}" ] && printf '%s' "$TASK_FILE" || printf '%s' "inline-task")"
+    echo "Ready Command Contract: $INVOCATION_CONTRACT"
+    exit 0
+fi
+
 echo "$PROMPT" > "$PROMPT_PATH"
 
 NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -507,6 +555,7 @@ write_delegate_json "$CONFIG_PATH" "$(cat <<EOF
   "lockPath": $(json_quote "$LOCK_PATH"),
   "taskFile": $(json_quote_or_null "${TASK_FILE:-}"),
   "maxBudgetUsd": $(json_number_or_null "${MAX_BUDGET_USD:-}"),
+  "permissionProfile": $(json_quote "$PERMISSION_PROFILE"),
   "bypassPermissions": $BYPASS_PERMISSIONS,
   "allowParallel": $ALLOW_PARALLEL,
   "initialSessionId": null,
@@ -538,6 +587,7 @@ write_delegate_json "$STATUS_PATH" "$(cat <<EOF
   "linesWritten": 0,
   "outputBytes": 0,
   "exitCode": null,
+  "permissionProfile": $(json_quote "$PERMISSION_PROFILE"),
   "attemptCount": 0,
   "retryCount": 0,
   "maxRetryCount": $MAX_RETRY_COUNT,
@@ -651,6 +701,7 @@ EOF
   "lockPath": $(json_quote "$LOCK_PATH"),
   "taskFile": $(json_quote_or_null "${TASK_FILE:-}"),
   "maxBudgetUsd": $(json_number_or_null "${MAX_BUDGET_USD:-}"),
+  "permissionProfile": $(json_quote "$PERMISSION_PROFILE"),
   "bypassPermissions": $BYPASS_PERMISSIONS,
   "allowParallel": $ALLOW_PARALLEL,
   "initialSessionId": $(json_quote ""),
@@ -799,6 +850,7 @@ write_delegate_json "$CONFIG_PATH" "$(cat <<EOF
   "lockPath": $(json_quote "$LOCK_PATH"),
   "taskFile": $(json_quote_or_null "${TASK_FILE:-}"),
   "maxBudgetUsd": $(json_number_or_null "${MAX_BUDGET_USD:-}"),
+  "permissionProfile": $(json_quote "$PERMISSION_PROFILE"),
   "bypassPermissions": $BYPASS_PERMISSIONS,
   "allowParallel": $ALLOW_PARALLEL,
   "initialSessionId": $(json_quote "$SESSION_ID"),
@@ -823,6 +875,7 @@ echo "Session Mode: $SESSION_MODE"
 echo "Session Key: $EFFECTIVE_SESSION_KEY"
 echo "Claude Session Id: $SESSION_ID"
 echo "Claude Session Argument: $([ "$RESUME" == "true" ] && echo "--resume" || echo "--session-id") $SESSION_ID"
+echo "Permission Profile: $PERMISSION_PROFILE"
 echo "Prompt: $PROMPT_PATH"
 echo "Output: $RESOLVED_OUTPUT_PATH"
 echo "Status: $STATUS_PATH"
@@ -855,6 +908,7 @@ if [[ "$DRY_RUN" == "true" ]]; then
   "linesWritten": 0,
   "outputBytes": 0,
   "exitCode": 0,
+  "permissionProfile": $(json_quote "$PERMISSION_PROFILE"),
   "attemptCount": 0,
   "retryCount": 0,
   "maxRetryCount": $MAX_RETRY_COUNT,
@@ -895,6 +949,7 @@ write_delegate_json "$STATUS_PATH" "$(cat <<EOF
   "linesWritten": 0,
   "outputBytes": 0,
   "exitCode": null,
+  "permissionProfile": $(json_quote "$PERMISSION_PROFILE"),
   "attemptCount": 0,
   "retryCount": 0,
   "maxRetryCount": $MAX_RETRY_COUNT,
@@ -967,6 +1022,7 @@ while [[ $ATTEMPT -lt $MAX_ATTEMPTS ]]; do
         "$SESSION_ID" \
         "$attempt_resume" \
         "${MAX_BUDGET_USD:-}" \
+        "$PERMISSION_PROFILE" \
         "$BYPASS_PERMISSIONS")
     
     if [[ $ATTEMPT -eq 1 ]]; then
@@ -1212,6 +1268,7 @@ write_delegate_json "$STATUS_PATH" "$(cat <<EOF
   "linesWritten": $(wc -l < "$RAW_STREAM_PATH" 2>/dev/null || echo 0),
   "outputBytes": $OUTPUT_BYTES,
   "exitCode": $STATUS_EXIT_CODE,
+  "permissionProfile": $(json_quote "$PERMISSION_PROFILE"),
   "attemptCount": $ATTEMPT,
   "retryCount": $RETRY_COUNT,
   "maxRetryCount": $MAX_RETRY_COUNT,

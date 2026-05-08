@@ -21,7 +21,7 @@
 把下面这句扔给目标项目里的 Codex。
 
 ```text
-请把 https://github.com/kevin0201z/codex_with_cc 调度子代理工作流集成或更新到当前项目。
+请把 https://github.com/kevin0201z/codex_with_claude 调度子代理工作流集成或更新到当前项目。
 ```
 
 # 仓库结构

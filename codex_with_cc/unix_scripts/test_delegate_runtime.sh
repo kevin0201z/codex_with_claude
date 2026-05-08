@@ -121,7 +121,7 @@ test_unstructured_output_normalization() {
 }
 
 test_stale_session_retry_detection() {
-    local raw_lines='{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Error: No conversation found for session ID abc123"}]}}
+    local raw_lines='Error: No conversation found for session ID abc123
 {"type":"result","subtype":"error"}'
     
     local decision
@@ -171,6 +171,115 @@ test_tool_result_false_positive_exclusion() {
     if [[ "$should_retry" == "false" ]]; then
         echo "true"
     else
+        echo "false"
+    fi
+}
+
+test_stream_json_tool_result_false_positive_exclusion() {
+    local raw_lines='{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"This file contains the text: stream-json output format requires --verbose flag"}]}}
+{"type":"result","subtype":"success"}'
+    
+    local decision
+    decision=$(get_claude_delegate_retry_decision "$raw_lines" "false" 0 "false" "true" "false")
+    
+    local should_retry
+    should_retry=$(echo "$decision" | jq -r '.shouldRetry')
+    local saw_stream_json_verbose_error
+    saw_stream_json_verbose_error=$(echo "$decision" | jq -r '.sawStreamJsonVerboseError')
+    
+    if [[ "$should_retry" == "false" ]] && [[ "$saw_stream_json_verbose_error" == "false" ]]; then
+        echo "true"
+    else
+        echo "false"
+    fi
+}
+
+test_successful_delegate_with_tool_result_error_text_releases_lease() {
+    local fake_bin
+    fake_bin=$(mktemp -d)
+    local artifact_root
+    artifact_root=$(mktemp -d)
+    local tmp_home
+    tmp_home=$(mktemp -d)
+
+    cat > "$fake_bin/claude" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+prompt="${@: -1}"
+output_path=$(printf '%s\n' "$prompt" | awk 'prev { print; exit } /^Delegated output report path:$/ { prev=1 }')
+if [[ -z "$output_path" ]]; then
+    echo "missing delegated output path" >&2
+    exit 1
+fi
+
+mkdir -p "$(dirname "$output_path")"
+cat > "$output_path" <<'REPORT'
+Process Log
+- Mock Claude wrote a structured report.
+
+Summary
+Mock delegate completed successfully.
+
+Changed Files
+None
+
+Verification
+- fake claude fixture
+
+Final Result
+PASS
+
+Risks Or Follow-ups
+None
+REPORT
+
+printf '%s\n' '{"type":"system","subtype":"init"}'
+printf '%s\n' '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"fixture mentions stream-json output format requires --verbose flag inside JSON content"}]}}'
+printf '%s\n' '{"type":"result","subtype":"success"}'
+EOF
+    chmod +x "$fake_bin/claude"
+
+    local result
+    result=$(PATH="$fake_bin:$PATH" HOME="$tmp_home" XDG_CONFIG_HOME="$tmp_home/.config" CODEX_CLAUDE_CHILD_THREAD=1 bash "$SCRIPT_DIR/delegate_to_claude.sh" \
+        -t "mock successful delegate" \
+        --artifact-root "$artifact_root" \
+        --session-key "mock-success" \
+        --bypass-permissions \
+        2>&1)
+
+    local status_path
+    status_path=$(find "$artifact_root" -maxdepth 1 -name 'status_*.json' | head -n 1)
+    local run_id
+    run_id=$(jq -r '.runId' "$status_path")
+    local verify_output
+    verify_output=$(bash "$SCRIPT_DIR/verify_delegate_artifacts.sh" -r "$run_id" -a "$artifact_root" 2>&1)
+
+    local status
+    status=$(jq -r '.status' "$status_path")
+    local exit_code
+    exit_code=$(jq -r '.exitCode' "$status_path")
+    local attempt_count
+    attempt_count=$(jq -r '.attemptCount' "$status_path")
+    local attempts_length
+    attempts_length=$(jq -r '.attempts | length' "$status_path")
+    local retry_count
+    retry_count=$(jq -r '.retryCount' "$status_path")
+    local primary_status
+    primary_status=$(jq -r '.primary.status' "$artifact_root/session-pools/mock-success.json")
+
+    rm -rf "$fake_bin" "$artifact_root" "$tmp_home"
+
+    if [[ "$status" == "completed" ]] && \
+       [[ "$exit_code" == "0" ]] && \
+       [[ "$attempt_count" == "1" ]] && \
+       [[ "$attempts_length" == "1" ]] && \
+       [[ "$retry_count" == "0" ]] && \
+       [[ "$primary_status" == "available" ]] && \
+       echo "$verify_output" | grep -q "Delegate artifacts verified successfully"; then
+        echo "true"
+    else
+        printf 'delegate result:\n%s\nverify:\n%s\n' "$result" "$verify_output" >&2
         echo "false"
     fi
 }
@@ -409,6 +518,7 @@ run_test "unstructured_output_normalization" test_unstructured_output_normalizat
 run_test "stale_session_retry_detection" test_stale_session_retry_detection
 run_test "stream_json_startup_error_retry" test_stream_json_startup_error_retry
 run_test "tool_result_false_positive_exclusion" test_tool_result_false_positive_exclusion
+run_test "stream_json_tool_result_false_positive_exclusion" test_stream_json_tool_result_false_positive_exclusion
 run_test "final_result_heading_detection" test_final_result_heading_detection
 run_test "output_resolution_success" test_output_resolution_success
 run_test "output_resolution_normalization" test_output_resolution_normalization
@@ -419,6 +529,7 @@ run_test "tmp_runtime_uses_tmp_artifact_root" test_tmp_runtime_uses_tmp_artifact
 run_test "tmp_runtime_env_var_uses_tmp_artifact_root" test_tmp_runtime_env_var_uses_tmp_artifact_root
 run_test "explicit_artifact_root_overrides_tmp_runtime" test_explicit_artifact_root_overrides_tmp_runtime
 run_test "rerun_script_preserves_tmp_runtime" test_rerun_script_preserves_tmp_runtime
+run_test "successful_delegate_with_tool_result_error_text_releases_lease" test_successful_delegate_with_tool_result_error_text_releases_lease
 
 echo ""
 echo "========================================"

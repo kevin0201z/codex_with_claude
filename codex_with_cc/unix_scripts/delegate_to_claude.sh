@@ -696,6 +696,28 @@ cleanup_lock() {
     rm -f "$LOCK_PATH" 2>/dev/null || true
 }
 
+SESSION_LEASE=""
+SESSION_LEASE_RELEASED=false
+release_current_session_lease() {
+    if [[ "$SESSION_LEASE_RELEASED" == "true" ]] || [[ -z "${SESSION_LEASE:-}" ]] || [[ "${SESSION_LEASE:-}" == "null" ]]; then
+        return 0
+    fi
+
+    release_claude_session_lease \
+        "$SESSION_STATE_PATH" \
+        "$SESSION_STATE_LOCK_PATH" \
+        "$EFFECTIVE_SESSION_KEY" \
+        "$SESSION_LEASE" \
+        "$RUN_ID" \
+        "$TASK_FINGERPRINT" >/dev/null 2>&1 || true
+    SESSION_LEASE_RELEASED=true
+}
+
+cleanup_delegate() {
+    release_current_session_lease
+    cleanup_lock
+}
+
 if [[ "$ALLOW_PARALLEL" != "true" ]]; then
     mkdir -p "$(dirname "$LOCK_PATH")"
     
@@ -734,7 +756,7 @@ EOF
     done
 fi
 
-trap cleanup_lock EXIT
+trap cleanup_delegate EXIT
 
 cd "$REPO_ROOT"
 
@@ -896,6 +918,7 @@ FINAL_TEXT=""
 OUTPUT_RESOLUTION=""
 FAILURE_DISPOSITION=""
 FAILURE_SUMMARY=""
+ATTEMPTS_JSON="[]"
 
 CAPTURE_STATE_FILE=$(mktemp)
 echo '{"assistantTexts":[],"traceLines":[],"finalText":"","sawAssistantText":false,"sawResultSuccess":false,"capturedFinalResultHeading":false}' > "$CAPTURE_STATE_FILE"
@@ -1057,6 +1080,8 @@ while [[ $ATTEMPT -lt $MAX_ATTEMPTS ]]; do
             echo "Warning: Claude startup failed before structured output was produced. Retrying once with the current session arguments." >&2
             echo "[retry] stream-json startup failed before structured output; retrying with current session" >> "$TRACE_TMP"
         fi
+
+        ATTEMPTS_JSON=$(jq -c --argjson attempts "$ATTEMPTS_JSON" --argjson attempt "$ATTEMPT_RECORD" -n '$attempts + [$attempt]')
         
         continue
     fi
@@ -1122,6 +1147,8 @@ Risks Or Follow-ups
     if [[ "$OUTPUT_WAS_NORMALIZED" == "true" ]]; then
         ATTEMPT_RECORD=$(echo "$ATTEMPT_RECORD" | jq '.capturedFinalResult = true | .outputWasNormalized = true')
     fi
+
+    ATTEMPTS_JSON=$(jq -c --argjson attempts "$ATTEMPTS_JSON" --argjson attempt "$ATTEMPT_RECORD" -n '$attempts + [$attempt]')
     
     break
 done
@@ -1158,6 +1185,16 @@ else
     FINAL_STATUS="failed"
 fi
 
+STATUS_EXIT_CODE="$EXIT_CODE"
+if [[ "$FINAL_STATUS" == "failed" && "$STATUS_EXIT_CODE" -eq 0 ]]; then
+    STATUS_EXIT_CODE=1
+fi
+
+if [[ "$FINAL_STATUS" == "failed" && -z "${FAILURE_DISPOSITION:-}" ]]; then
+    FAILURE_DISPOSITION="NEED_HUMAN_INTERVENTION"
+    FAILURE_SUMMARY="Claude Code finished without a valid structured Final Result report. Output: $RESOLVED_OUTPUT_PATH"
+fi
+
 NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 write_delegate_json "$STATUS_PATH" "$(cat <<EOF
 {
@@ -1174,14 +1211,14 @@ write_delegate_json "$STATUS_PATH" "$(cat <<EOF
   "tracePath": $(json_quote "$TRACE_PATH"),
   "linesWritten": $(wc -l < "$RAW_STREAM_PATH" 2>/dev/null || echo 0),
   "outputBytes": $OUTPUT_BYTES,
-  "exitCode": $EXIT_CODE,
+  "exitCode": $STATUS_EXIT_CODE,
   "attemptCount": $ATTEMPT,
   "retryCount": $RETRY_COUNT,
   "maxRetryCount": $MAX_RETRY_COUNT,
   "outputWasNormalized": $OUTPUT_WAS_NORMALIZED,
   "failureDisposition": $(json_quote_or_null "${FAILURE_DISPOSITION:-}"),
   "failureSummary": $(json_quote_or_null "${FAILURE_SUMMARY:-}"),
-  "attempts": [],
+  "attempts": $ATTEMPTS_JSON,
   "tmpRuntimeRequested": $TMP_RUNTIME,
   "tmpRuntimeEffective": $TMP_RUNTIME_EFFECTIVE,
   "artifactRootSource": $(json_quote "$ARTIFACT_ROOT_SOURCE"),
@@ -1189,6 +1226,13 @@ write_delegate_json "$STATUS_PATH" "$(cat <<EOF
 }
 EOF
 )"
+
+jq --argjson attempt "$ATTEMPT" --argjson retry "$RETRY_COUNT" \
+   --arg disp "${FAILURE_DISPOSITION:-}" --arg summary "${FAILURE_SUMMARY:-}" \
+   '.attemptCount = $attempt | .retryCount = $retry
+    | (if $disp != "" then .failureDisposition = $disp else del(.failureDisposition) end)
+    | (if $summary != "" then .failureSummary = $summary else del(.failureSummary) end)' \
+   "$CONFIG_PATH" > "${CONFIG_PATH}.tmp" && mv "${CONFIG_PATH}.tmp" "$CONFIG_PATH"
 
 if [[ $EXIT_CODE -ne 0 ]]; then
     if [[ "$FAILURE_DISPOSITION" == "NEED_HUMAN_INTERVENTION" ]]; then
@@ -1208,10 +1252,4 @@ if [[ "$FINAL_STATUS" != "completed" ]]; then
     exit 1
 fi
 
-release_claude_session_lease \
-    "$SESSION_STATE_PATH" \
-    "$SESSION_STATE_LOCK_PATH" \
-    "$EFFECTIVE_SESSION_KEY" \
-    "$SESSION_LEASE" \
-    "$RUN_ID" \
-    "$TASK_FINGERPRINT"
+release_current_session_lease

@@ -79,7 +79,7 @@ CONFIG=$(cat "$CONFIG_PATH")
 has_json_field() {
     local json="$1"
     local field="$2"
-    echo "$json" | jq -e ".${field}" >/dev/null 2>&1
+    echo "$json" | jq -e --arg field "$field" 'has($field)' >/dev/null 2>&1
 }
 
 ARTIFACT_SCHEMA_STATUS=$(echo "$STATUS" | jq -r '.artifactSchema // 0')
@@ -195,6 +195,7 @@ ATTEMPTS_LENGTH=$(echo "$ATTEMPTS" | jq 'length')
 
 STATUS_ATTEMPT_COUNT=$(echo "$STATUS" | jq -r '.attemptCount // 0')
 STATUS_RETRY_COUNT=$(echo "$STATUS" | jq -r '.retryCount // 0')
+MAX_RETRY_COUNT=$(echo "$STATUS" | jq -r '.maxRetryCount // 0')
 CONFIG_ATTEMPT_COUNT=$(echo "$CONFIG" | jq -r '.attemptCount // 0')
 CONFIG_RETRY_COUNT=$(echo "$CONFIG" | jq -r '.retryCount // 0')
 
@@ -219,7 +220,6 @@ if [[ $CONFIG_RETRY_COUNT -ne $STATUS_RETRY_COUNT ]]; then
 fi
 
 if [[ $STATUS_RETRY_COUNT -gt $MAX_RETRY_COUNT ]]; then
-    MAX_RETRY_COUNT=$(echo "$STATUS" | jq -r '.maxRetryCount // 0')
     echo "Delegate retryCount ($STATUS_RETRY_COUNT) cannot exceed maxRetryCount ($MAX_RETRY_COUNT)." >&2
     exit 1
 fi
@@ -273,7 +273,7 @@ ATTEMPT_PROPERTIES=("attempt" "sessionId" "resume" "retryReason" "exitCode" "saw
 
 for ((i=0; i<ATTEMPTS_LENGTH; i++)); do
     for prop in "${ATTEMPT_PROPERTIES[@]}"; do
-        if ! echo "$ATTEMPTS" | jq -e ".[$i].${prop}" >/dev/null 2>&1; then
+        if ! echo "$ATTEMPTS" | jq -e --arg prop "$prop" ".[$i] | has(\$prop)" >/dev/null 2>&1; then
             echo "Delegate attempt[$i] is missing '$prop'." >&2
             exit 1
         fi

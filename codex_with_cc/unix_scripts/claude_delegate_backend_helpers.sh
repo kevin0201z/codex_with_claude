@@ -349,8 +349,11 @@ get_claude_delegate_retry_decision() {
     local saw_result_success="$5"
     local captured_final_result_heading="$6"
 
+    local non_json_lines
+    non_json_lines=$(get_claude_delegate_non_json_raw_lines "$raw_lines")
+
     local joined
-    joined=$(echo "$raw_lines" | tr '\n' ' ')
+    joined=$(echo "$non_json_lines" | tr '\n' ' ')
 
     local saw_stale_session_text="false"
     if echo "$joined" | grep -qiE 'No conversation found.*session ID'; then
@@ -371,13 +374,15 @@ get_claude_delegate_retry_decision() {
     local retry_reason=""
     local retry_with_fresh_session="false"
 
-    if [[ "$resume_attempt" == "true" ]] && \
+    if [[ "$saw_result_success" != "true" ]] && \
+       [[ "$resume_attempt" == "true" ]] && \
        [[ "$saw_stale_session_text" == "true" ]] && \
        [[ "$has_structured_success" == "false" ]]; then
         should_retry="true"
         retry_reason="stale_claude_session"
         retry_with_fresh_session="true"
-    elif [[ "$saw_stream_json_verbose_error" == "true" ]] && \
+    elif [[ "$saw_result_success" != "true" ]] && \
+         [[ "$saw_stream_json_verbose_error" == "true" ]] && \
          [[ "$has_structured_success" == "false" ]]; then
         should_retry="true"
         retry_reason="stream_json_startup"

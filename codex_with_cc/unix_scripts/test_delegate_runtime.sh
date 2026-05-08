@@ -556,6 +556,240 @@ test_rerun_script_preserves_tmp_runtime() {
     fi
 }
 
+test_wait_for_delegate_run_requires_complete_artifacts() {
+    local artifact_root
+    artifact_root=$(mktemp -d)
+    local run_id="wait-timeout-missing-output"
+    local status_path="$artifact_root/status_${run_id}.json"
+    local config_path="$artifact_root/config_${run_id}.json"
+
+    cat > "$config_path" <<EOF
+{
+  "artifactSchema": 2,
+  "invocationContract": "spawn_agent_child_only",
+  "childThreadMarkerName": "CODEX_CLAUDE_CHILD_THREAD",
+  "childThreadMarkerValidated": true,
+  "runId": "$run_id",
+  "outputPath": "$artifact_root/claude_${run_id}.md",
+  "statusPath": "$status_path",
+  "tracePath": "$artifact_root/trace_${run_id}.log",
+  "promptPath": "$artifact_root/prompt_${run_id}.md",
+  "rawStreamPath": "$artifact_root/stream_${run_id}.jsonl",
+  "sessionMode": "PrimaryReuse",
+  "sessionKey": "mock-session-$run_id",
+  "attemptCount": 1,
+  "retryCount": 0
+}
+EOF
+
+    cat > "$status_path" <<EOF
+{
+  "artifactSchema": 2,
+  "invocationContract": "spawn_agent_child_only",
+  "childThreadMarkerName": "CODEX_CLAUDE_CHILD_THREAD",
+  "childThreadMarkerValidated": true,
+  "runId": "$run_id",
+  "status": "completed",
+  "outputPath": "$artifact_root/claude_${run_id}.md",
+  "promptPath": "$artifact_root/prompt_${run_id}.md",
+  "rawStreamPath": "$artifact_root/stream_${run_id}.jsonl",
+  "tracePath": "$artifact_root/trace_${run_id}.log",
+  "linesWritten": 0,
+  "outputBytes": 0,
+  "exitCode": 0,
+  "permissionProfile": "readonly",
+  "attemptCount": 1,
+  "retryCount": 0,
+  "maxRetryCount": 0,
+  "outputWasNormalized": false,
+  "attempts": [
+    {
+      "attempt": 1,
+      "resume": false,
+      "exitCode": 0,
+      "capturedFinalResult": true,
+      "outputWasNormalized": false
+    }
+  ]
+}
+EOF
+
+    local result
+    local exit_code
+    set +e
+    result=$(bash "$SCRIPT_DIR/wait_for_delegate_run.sh" \
+        -r "$run_id" \
+        -a "$artifact_root" \
+        --timeout-seconds 1 \
+        --poll-milliseconds 100 \
+        2>&1)
+    exit_code=$?
+    set -e
+
+    rm -rf "$artifact_root"
+
+    if [[ "$exit_code" == "124" ]] && \
+       echo "$result" | grep -q "Artifact verification did not pass before timeout" && \
+       echo "$result" | grep -q "Missing output file"; then
+        echo "true"
+    else
+        printf 'wait helper result:\n%s\n' "$result" >&2
+        echo "false"
+    fi
+}
+
+test_run_delegate_supervised_surfaces_final_summary() {
+    local script_root
+    script_root=$(mktemp -d)
+    local artifact_root
+    artifact_root=$(mktemp -d)
+
+    cp "$SCRIPT_DIR/run_delegate_supervised.sh" "$script_root/run_delegate_supervised.sh"
+    cp "$SCRIPT_DIR/wait_for_delegate_run.sh" "$script_root/wait_for_delegate_run.sh"
+    cp "$SCRIPT_DIR/verify_delegate_artifacts.sh" "$script_root/verify_delegate_artifacts.sh"
+
+    cat > "$script_root/delegate_to_claude.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+artifact_root=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --artifact-root)
+            artifact_root="$2"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+if [[ -z "$artifact_root" ]]; then
+    echo "artifact root is required" >&2
+    exit 1
+fi
+
+run_id="supervised-run-123"
+output_path="$artifact_root/claude_${run_id}.md"
+status_path="$artifact_root/status_${run_id}.json"
+config_path="$artifact_root/config_${run_id}.json"
+trace_path="$artifact_root/trace_${run_id}.log"
+prompt_path="$artifact_root/prompt_${run_id}.md"
+stream_path="$artifact_root/stream_${run_id}.jsonl"
+
+mkdir -p "$artifact_root"
+printf 'Prompt for %s\n' "$run_id" > "$prompt_path"
+printf '{"type":"result","subtype":"success"}\n' > "$stream_path"
+printf 'trace for %s\n' "$run_id" > "$trace_path"
+
+cat > "$output_path" <<REPORT
+Process Log
+- Mock supervised delegate wrote a structured report.
+
+Summary
+Supervised delegate summary line.
+
+Changed Files
+None
+
+Verification
+- mock supervised verification
+
+Final Result
+PASS / SUPERVISED
+
+Risks Or Follow-ups
+None
+REPORT
+
+cat > "$config_path" <<JSON
+{
+  "artifactSchema": 2,
+  "invocationContract": "spawn_agent_child_only",
+  "childThreadMarkerName": "CODEX_CLAUDE_CHILD_THREAD",
+  "childThreadMarkerValidated": true,
+  "runId": "$run_id",
+  "outputPath": "$output_path",
+  "statusPath": "$status_path",
+  "tracePath": "$trace_path",
+  "promptPath": "$prompt_path",
+  "rawStreamPath": "$stream_path",
+  "sessionMode": "PrimaryReuse",
+  "sessionKey": "mock-session-$run_id",
+  "initialSessionId": "session-$run_id",
+  "initialResume": false,
+  "sessionId": "session-$run_id",
+  "resume": false,
+  "attemptCount": 1,
+  "retryCount": 0,
+  "maxRetryCount": 0
+}
+JSON
+
+cat > "$status_path" <<JSON
+{
+  "artifactSchema": 2,
+  "invocationContract": "spawn_agent_child_only",
+  "childThreadMarkerName": "CODEX_CLAUDE_CHILD_THREAD",
+  "childThreadMarkerValidated": true,
+  "runId": "$run_id",
+  "status": "completed",
+  "outputPath": "$output_path",
+  "promptPath": "$prompt_path",
+  "rawStreamPath": "$stream_path",
+  "tracePath": "$trace_path",
+  "linesWritten": 1,
+  "outputBytes": 256,
+  "exitCode": 0,
+  "permissionProfile": "readonly",
+  "attemptCount": 1,
+  "retryCount": 0,
+  "maxRetryCount": 0,
+  "outputWasNormalized": false,
+  "attempts": [
+    {
+      "attempt": 1,
+      "sessionId": "session-$run_id",
+      "resume": false,
+      "retryReason": "",
+      "exitCode": 0,
+      "sawAssistantText": true,
+      "sawResultSuccess": true,
+      "capturedFinalResult": true,
+      "outputWasNormalized": false
+    }
+  ]
+}
+JSON
+
+echo "RunId: $run_id"
+echo "Status: $status_path"
+EOF
+    chmod +x "$script_root/delegate_to_claude.sh"
+
+    local result
+    local exit_code
+    set +e
+    result=$(bash "$script_root/run_delegate_supervised.sh" --artifact-root "$artifact_root" 2>&1)
+    exit_code=$?
+    set -e
+
+    rm -rf "$script_root" "$artifact_root"
+
+    if [[ "$exit_code" == "0" ]] && \
+       echo "$result" | grep -q "Summary:" && \
+       echo "$result" | grep -q "Supervised delegate summary line." && \
+       echo "$result" | grep -q "Final Result:" && \
+       echo "$result" | grep -q "PASS / SUPERVISED" && \
+       echo "$result" | grep -q "Artifact Verification: passed"; then
+        echo "true"
+    else
+        printf 'supervised helper result:\n%s\n' "$result" >&2
+        echo "false"
+    fi
+}
+
 echo "========================================"
 echo "Running delegate runtime tests"
 echo "========================================"
@@ -582,6 +816,8 @@ run_test "tmp_runtime_uses_tmp_artifact_root" test_tmp_runtime_uses_tmp_artifact
 run_test "tmp_runtime_env_var_uses_tmp_artifact_root" test_tmp_runtime_env_var_uses_tmp_artifact_root
 run_test "explicit_artifact_root_overrides_tmp_runtime" test_explicit_artifact_root_overrides_tmp_runtime
 run_test "rerun_script_preserves_tmp_runtime" test_rerun_script_preserves_tmp_runtime
+run_test "wait_for_delegate_run_requires_complete_artifacts" test_wait_for_delegate_run_requires_complete_artifacts
+run_test "run_delegate_supervised_surfaces_final_summary" test_run_delegate_supervised_surfaces_final_summary
 run_test "successful_delegate_with_tool_result_error_text_releases_lease" test_successful_delegate_with_tool_result_error_text_releases_lease
 
 echo ""

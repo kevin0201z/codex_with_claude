@@ -76,6 +76,42 @@
 请把项目里的 xxx 模块交给子代理做深度调查，要求输出调用链、关键文件、潜在风险和建议修改点。你只保留结论，别把所有噪音塞回主上下文。
 ```
 
+# 推荐委派梯度
+
+如果你不是 100% 确认任务边界已经足够清晰，推荐按下面这个梯度走，而不是第一次就直接 `accept-edits`：
+
+1. 先跑 `--preflight`
+2. 再跑 `readonly` 审查或探查
+3. 让审查结果输出“最小实现清单”
+4. 再把实现任务收窄到明确读写范围，切到 `accept-edits`
+5. 优先使用 `PrimaryReuse`
+6. 只有在任务边界非常清晰、并且多个任务互不冲突时，再使用 `PrimaryAnchor` / `ParallelPool`
+
+推荐的任务文件写法至少包含：
+
+- 读取范围
+- 写入范围
+- 禁止修改范围
+- 最小验证命令
+
+示例：
+
+```md
+## 读取范围
+- 只允许读取 ...
+
+## 写入范围
+- 只允许修改 ...
+
+## 禁止修改
+- 不允许修改 ...
+
+## 建议验证
+- 只运行 ...
+```
+
+这能显著降低第一次委派就被策略层拦住的概率。
+
 # 这不是提示词玩具
 
 它内置了 Claude session 复用池：`PrimaryReuse` 负责串行主会话续跑，`PrimaryAnchor` 负责并行批次的上下文锚点，`ParallelPool` 负责独立支线任务的会话池化。简单说，就是尽量让相似任务复用稳定 session，把上下文热起来，把 DeepSeek/Claude Code 的缓存命中率吃满。长任务不再每次冷启动，重复阅读、重复建模、重复烧 token 的部分能少一点是一点。
@@ -84,11 +120,33 @@
 
 同时，委派链路不是“让 AI 自觉点”这种玄学约束。脚本会检查 `CODEX_CLAUDE_CHILD_THREAD=1`，强制 Claude Code 委派只能发生在 Codex 子线程里；主线程不能直接下场跑 `claude`，避免上下文污染、审计断链和结果没人兜底。Codex 主线程只做规划、派工、review、返工裁决，子代理才是执行层。
 
+这里还有一个很重要但很容易被忽略的区别：
+
+- **launcher 子线程**：只负责把 delegate 跑起来
+- **supervisor 子线程**：负责发起 delegate，并一直盯到 `status_<RunId>.json` 进入终态、`claude_<RunId>.md` 落盘，再把最终结果带回主线程
+
+默认推荐你使用 **supervisor 子线程**，不要只让子代理拿到 `RunId` 就结束。否则 Claude 任务可能还在后台运行，但主线程已经误以为这一轮交付结束了。
+
+如果你希望减少这类提示词歧义，可以直接让子线程使用：
+
+- `codex_with_cc/unix_scripts/run_delegate_supervised.sh`
+
+如果你已经拿到了 `RunId` 和 artifact root，只是想继续等待最终结果，可以使用：
+
+- `codex_with_cc/unix_scripts/wait_for_delegate_run.sh`
+
 每次运行还会落审计产物：`config_<RunId>.json`、`status_<RunId>.json`、`prompt_<RunId>.md`、`stream_<RunId>.jsonl`、`trace_<RunId>.log`、`claude_<RunId>.md`。也就是说，任务怎么发出去的、用了哪个 session、有没有 resume、输出是什么、链路有没有断，都能查。不是“AI 说它干了”，而是有 artifacts 能验尸。
 
 Linux/macOS 还可以直接启用 `/tmp` runtime（`--tmp-runtime` 或 `CODEX_WITH_CC_TMP_RUNTIME=1`），避免仓库权限导致委派脚本先失败再回退的体验。详见 [codex_with_cc/CODEX_WITH_CC.md](codex_with_cc/CODEX_WITH_CC.md)。
 
 现在 Linux/macOS 还支持权限档位：`readonly` 适合审查、调查和 smoke test，`accept-edits` 适合普通实现任务，`bypass` 只给明确批准的高信任场景。默认推荐先不用 bypass，先用正常权限流跑通；需要先查环境是否能跑，也可以先执行 `--preflight` 做只校验不出网的预检查。
+
+一个实用的双阶段例子是：
+
+```text
+第一步：请安排一个子代理用 readonly 审查 xxx 模块，输出补测或改造清单。
+第二步：基于这份清单，再安排另一个子代理用 accept-edits 做窄范围实现。你负责最终 review 和验证。
+```
 
 最后还有验证脚本兜底：运行时验证、session pool 验证、artifact 验证、delegate chain 验证都配好了。多子代理并行不是凭感觉开派对，而是有 session state、RunId、SessionKey、artifact root 和链路校验把它们串起来。逼格说法叫：可审计、可复用、可并发、可回放的多代理委派协议。、
 
